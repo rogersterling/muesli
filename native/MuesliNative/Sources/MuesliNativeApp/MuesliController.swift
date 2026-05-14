@@ -154,6 +154,7 @@ final class MuesliController: NSObject {
     private var activeMeetingSession: MeetingSession?
     private var activeMeetingID: Int64?
     private var liveMeetingTitleCache: [Int64: String] = [:]
+    private var liveMeetingCalendarAttendees: [Int64: [CalendarEventAttendee]] = [:]
     private var liveManualNotesCache: [Int64: String] = [:]
     private var liveManualNotesLastPersistedAt: [Int64: Date] = [:]
     private var liveManualNotesLastPersistedValue: [Int64: String] = [:]
@@ -2346,6 +2347,11 @@ final class MuesliController: NSObject {
 
     private func clearCachedMeetingTitle(id: Int64) {
         liveMeetingTitleCache[id] = nil
+        clearCachedMeetingCalendarAttendees(id: id)
+    }
+
+    private func clearCachedMeetingCalendarAttendees(id: Int64) {
+        liveMeetingCalendarAttendees[id] = nil
     }
 
     private func flushCachedMeetingTitle(id: Int64) {
@@ -2368,6 +2374,10 @@ final class MuesliController: NSObject {
 
     private func clearAllCachedMeetingTitles() {
         liveMeetingTitleCache.removeAll()
+    }
+
+    private func clearAllCachedMeetingCalendarAttendees() {
+        liveMeetingCalendarAttendees.removeAll()
     }
 
     private func manualNotesForLiveMeeting(id: Int64) -> String {
@@ -2434,7 +2444,7 @@ final class MuesliController: NSObject {
                 startTime: event.startDate,
                 endTime: event.endDate,
                 rawTranscript: "",
-                formattedNotes: "",
+                formattedNotes: Self.calendarAttendeesMarkdown(event.attendees),
                 micAudioPath: nil,
                 systemAudioPath: nil
             )
@@ -2446,6 +2456,59 @@ final class MuesliController: NSObject {
         } catch {
             fputs("[muesli-native] failed to create meeting from calendar event: \(error)\n", stderr)
         }
+    }
+
+    private func formattedNotesWithCalendarAttendees(
+        _ formattedNotes: String,
+        calendarEventID: String?,
+        meetingID: Int64? = nil
+    ) -> String {
+        if let meetingID, let attendees = liveMeetingCalendarAttendees[meetingID] {
+            return Self.appendCalendarAttendees(attendees, to: formattedNotes)
+        }
+
+        guard let event = calendarEvent(matching: calendarEventID) else { return formattedNotes }
+        return Self.appendCalendarAttendees(event.attendees, to: formattedNotes)
+    }
+
+    private func calendarEvent(matching calendarEventID: String?) -> UnifiedCalendarEvent? {
+        guard let calendarEventID = calendarEventID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !calendarEventID.isEmpty else { return nil }
+
+        if let exact = appState.upcomingCalendarEvents.first(where: { $0.id == calendarEventID }) {
+            return exact
+        }
+
+        let baseID = calendarEventID.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: true)
+            .first
+            .map(String.init)
+        guard let baseID, baseID != calendarEventID else { return nil }
+        return appState.upcomingCalendarEvents.first(where: { $0.id == baseID })
+    }
+
+    private static func appendCalendarAttendees(
+        _ attendees: [CalendarEventAttendee],
+        to formattedNotes: String
+    ) -> String {
+        guard !attendees.isEmpty,
+              MeetingListItemMetadata.participants(from: formattedNotes).isEmpty else {
+            return formattedNotes
+        }
+
+        let attendeeSection = calendarAttendeesMarkdown(attendees)
+        guard !attendeeSection.isEmpty else { return formattedNotes }
+
+        let trimmedNotes = formattedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedNotes.isEmpty else { return attendeeSection }
+        return "\(trimmedNotes)\n\n\(attendeeSection)"
+    }
+
+    private static func calendarAttendeesMarkdown(_ attendees: [CalendarEventAttendee]) -> String {
+        let lines = attendees
+            .map(\.markdownLabel)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !lines.isEmpty else { return "" }
+        return "## Attendees\n" + lines.map { "- \($0)" }.joined(separator: "\n")
     }
 
     func moveMeeting(id: Int64, toFolder folderID: Int64?) {
@@ -2573,6 +2636,7 @@ final class MuesliController: NSObject {
         try? dictationStore.clearMeetings()
         clearAllCachedMeetingManualNotes()
         clearAllCachedMeetingTitles()
+        clearAllCachedMeetingCalendarAttendees()
         appState.selectedMeetingID = nil
         appState.selectedMeetingRecord = nil
         appState.meetingsNavigationState = .browser
@@ -2764,6 +2828,11 @@ final class MuesliController: NSObject {
                 selectedTemplatePrompt: templateSnapshot.prompt
             )
             activeMeetingID = meetingID
+            if let event = calendarEvent(matching: calendarEventID), !event.attendees.isEmpty {
+                liveMeetingCalendarAttendees[meetingID] = event.attendees
+            } else {
+                liveMeetingCalendarAttendees[meetingID] = nil
+            }
             syncAppState()
             if openDocument {
                 showMeetingDocument(id: meetingID)
@@ -3390,6 +3459,11 @@ final class MuesliController: NSObject {
 
         if let existingMeetingID {
             let persistedTitle = completedLiveMeetingTitle(for: result, existingMeetingID: existingMeetingID)
+            let formattedNotes = formattedNotesWithCalendarAttendees(
+                result.formattedNotes,
+                calendarEventID: result.calendarEventID,
+                meetingID: existingMeetingID
+            )
             try dictationStore.completeLiveMeeting(
                 id: existingMeetingID,
                 title: persistedTitle,
@@ -3397,7 +3471,7 @@ final class MuesliController: NSObject {
                 startTime: result.startTime,
                 endTime: result.endTime,
                 rawTranscript: result.rawTranscript,
-                formattedNotes: result.formattedNotes,
+                formattedNotes: formattedNotes,
                 micAudioPath: nil,
                 systemAudioPath: nil,
                 savedRecordingPath: savedRecordingPath,
@@ -3410,13 +3484,17 @@ final class MuesliController: NSObject {
             clearCachedMeetingManualNotes(id: existingMeetingID)
             clearCachedMeetingTitle(id: existingMeetingID)
         } else {
+            let formattedNotes = formattedNotesWithCalendarAttendees(
+                result.formattedNotes,
+                calendarEventID: result.calendarEventID
+            )
             meetingID = try dictationStore.insertMeeting(
                 title: result.title,
                 calendarEventID: result.calendarEventID,
                 startTime: result.startTime,
                 endTime: result.endTime,
                 rawTranscript: result.rawTranscript,
-                formattedNotes: result.formattedNotes,
+                formattedNotes: formattedNotes,
                 micAudioPath: nil,
                 systemAudioPath: nil,
                 savedRecordingPath: savedRecordingPath,
