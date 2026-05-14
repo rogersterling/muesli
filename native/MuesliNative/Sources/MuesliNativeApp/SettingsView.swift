@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 import MuesliCore
 
 private struct MeetingDetectionAppOption: Identifiable {
@@ -752,6 +753,19 @@ struct SettingsView: View {
             }
 
             settingsSection("Appearance") {
+                settingsRow("App name", controlWidth: 260) {
+                    settingsTextField(
+                        text: appState.config.appDisplayName,
+                        placeholder: AppIdentity.bundleDisplayName
+                    ) { value in
+                        controller.updateConfig { $0.appDisplayName = value }
+                    }
+                }
+                Divider().background(MuesliTheme.surfaceBorder)
+                settingsRow("Logo", controlWidth: 260) {
+                    customLogoPicker
+                }
+                Divider().background(MuesliTheme.surfaceBorder)
                 settingsRow("Dark mode") {
                     settingsSwitch(isOn: appState.config.darkMode) { newValue in
                         controller.updateConfig { $0.darkMode = newValue }
@@ -803,7 +817,7 @@ struct SettingsView: View {
     }
 
     private var glassTintPicker: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach(Self.accentPresets, id: \.hex) { preset in
                 let isSelected = appState.config.recordingColorHex.lowercased() == preset.hex
                 Button {
@@ -822,7 +836,85 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .help(preset.name)
             }
+
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { Color(hex: appState.config.recordingColorHex) },
+                    set: { color in
+                        if let hex = NSColor(color).toHexString() {
+                            controller.updateConfig { $0.recordingColorHex = hex }
+                        }
+                    }
+                ),
+                supportsOpacity: false
+            )
+            .labelsHidden()
+            .frame(width: 28, height: 24)
+            .help("Choose any accent color")
         }
+    }
+
+    private var customLogoPicker: some View {
+        HStack(spacing: MuesliTheme.spacing8) {
+            logoPreview
+
+            Button {
+                pickCustomLogo()
+            } label: {
+                Image(systemName: "photo")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MuesliTheme.textSecondary)
+                    .frame(width: 28, height: 24)
+                    .background(MuesliTheme.surfacePrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                            .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Upload logo")
+
+            if appState.config.customLogoPath != nil {
+                Button {
+                    let oldPath = appState.config.customLogoPath
+                    controller.updateConfig { $0.customLogoPath = nil }
+                    AppBrandingAssets.removeLogo(at: oldPath)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(MuesliTheme.textTertiary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Remove custom logo")
+            }
+        }
+    }
+
+    private var logoPreview: some View {
+        Group {
+            if let img = MenuBarIconRenderer.make(
+                choice: appState.config.menuBarIcon,
+                customLogoPath: appState.config.customLogoPath
+            ) {
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Image(systemName: "app")
+                    .font(.system(size: 13))
+            }
+        }
+        .frame(width: 24, height: 24)
+        .padding(2)
+        .background(MuesliTheme.backgroundRaised)
+        .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+        .overlay(
+            RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+        )
     }
 
     private var menuBarIconPicker: some View {
@@ -1093,6 +1185,32 @@ struct SettingsView: View {
             controller.updateMaraudersMapAudioClip()
         } catch {
             fputs("[muesli-native] Failed to import custom audio: \(error)\n", stderr)
+        }
+    }
+
+    private func pickCustomLogo() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a logo"
+        panel.prompt = "Choose Logo"
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+
+        presentOpenPanel(panel) { url in
+            do {
+                let previousPath = appState.config.customLogoPath
+                let importedPath = try AppBrandingAssets.importLogo(from: url)
+                controller.updateConfig {
+                    $0.customLogoPath = importedPath
+                    $0.menuBarIcon = "muesli"
+                }
+                if previousPath != importedPath {
+                    AppBrandingAssets.removeLogo(at: previousPath)
+                }
+            } catch {
+                fputs("[muesli-native] Failed to import custom logo: \(error)\n", stderr)
+            }
         }
     }
 
@@ -1838,6 +1956,16 @@ struct SettingsView: View {
             }
         )
         .frame(height: 26)
+    }
+
+    @ViewBuilder
+    private func settingsTextField(text: String, placeholder: String, onChange: @escaping (String) -> Void) -> some View {
+        PastableTextField(
+            text: text,
+            placeholder: placeholder,
+            onChange: onChange
+        )
+        .frame(height: 24)
     }
 
     @ViewBuilder

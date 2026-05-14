@@ -161,8 +161,12 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: MuesliTheme.spacing4) {
             HStack(spacing: MuesliTheme.spacing12) {
                 Group {
-                    if appState.config.menuBarIcon == "muesli",
-                       let img = MenuBarIconRenderer.make(choice: "muesli") {
+                    if let img = AppBrandingAssets.image(at: appState.config.customLogoPath) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .scaledToFit()
+                    } else if appState.config.menuBarIcon == "muesli",
+                              let img = MenuBarIconRenderer.make(choice: "muesli") {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFit()
@@ -172,7 +176,7 @@ struct SidebarView: View {
                 }
                 .frame(width: 28, height: 28)
                 .foregroundStyle(MuesliTheme.accent)
-                Text("muesli")
+                Text(appState.config.resolvedDisplayName)
                     .font(MuesliTheme.title2())
                     .foregroundStyle(MuesliTheme.textPrimary)
             }
