@@ -275,7 +275,7 @@ final class MuesliController: NSObject {
 
         // Defer permission-triggering monitors until after onboarding
         if canRunMainApp && config.resolvedOnboardingUseCase.includesPushToTalk {
-            hotkeyMonitor.targetKeyCode = config.dictationHotkey.keyCode
+            hotkeyMonitor.configure(config.dictationHotkey)
             hotkeyMonitor.start()
             startComputerUseHotkeyMonitorIfNeeded()
         }
@@ -1305,7 +1305,7 @@ final class MuesliController: NSObject {
             return result
         }
         updateConfig { $0.dictationHotkey = hotkey }
-        hotkeyMonitor.configure(keyCode: hotkey.keyCode)
+        hotkeyMonitor.configure(hotkey)
         configureComputerUseHotkeyMonitor()
         return result
     }
@@ -1351,7 +1351,7 @@ final class MuesliController: NSObject {
             config.computerUseHotkey = .computerUseDefault
             config.enableComputerUseHotkey = false
         }
-        hotkeyMonitor.configure(keyCode: HotkeyConfig.default.keyCode)
+        hotkeyMonitor.configure(.default)
         configureComputerUseHotkeyMonitor()
     }
 
@@ -3514,7 +3514,7 @@ final class MuesliController: NSObject {
             computerUseHotkeyMonitor.stop()
             return
         }
-        computerUseHotkeyMonitor.configure(keyCode: config.computerUseHotkey.keyCode)
+        computerUseHotkeyMonitor.configure(config.computerUseHotkey)
         startComputerUseHotkeyMonitorIfNeeded()
     }
 
@@ -3527,13 +3527,13 @@ final class MuesliController: NSObject {
             computerUseHotkeyMonitor.stop()
             return
         }
-        guard config.computerUseHotkey.keyCode != config.dictationHotkey.keyCode else {
+        guard !ShortcutHotkeyPolicy.hotkeysConflict(config.computerUseHotkey, config.dictationHotkey) else {
             computerUseHotkeyMonitor.stop()
             fputs("[cua] computer use hotkey disabled because it matches dictation hotkey\n", stderr)
             return
         }
         computerUseHotkeyMonitor.doubleTapEnabled = config.enableDoubleTapDictation
-        computerUseHotkeyMonitor.targetKeyCode = config.computerUseHotkey.keyCode
+        computerUseHotkeyMonitor.configure(config.computerUseHotkey)
         computerUseHotkeyMonitor.start()
     }
 
