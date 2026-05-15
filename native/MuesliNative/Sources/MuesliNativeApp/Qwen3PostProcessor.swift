@@ -107,11 +107,15 @@ enum Qwen3PostProcessorOutputCleaner {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func shouldFallbackToInput(cleaned: String, input: String) -> Bool {
+    static func shouldFallbackToInput(cleaned: String, input: String, appContext: String? = nil) -> Bool {
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
 
         let lower = trimmed.lowercased()
+        if containsAppContextLeak(lower, input: input, appContext: appContext) {
+            return true
+        }
+
         let assistantMarkers = [
             "the user is asking",
             "**analysis:**",
@@ -137,6 +141,42 @@ enum Qwen3PostProcessorOutputCleaner {
             return expansion > 2.5 && trimmed.count > 150
         }
         return expansion > 2.0 && trimmed.count > 200
+    }
+
+    private static func containsAppContextLeak(_ lowercasedOutput: String, input: String, appContext: String?) -> Bool {
+        let lowerInput = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let contextMarkers = [
+            "<app-context>",
+            "</app-context>",
+            "<user-input>",
+            "</user-input>",
+            "document context before cursor:",
+            "selected text:",
+        ]
+        if contextMarkers.contains(where: { lowercasedOutput.contains($0) }) {
+            return true
+        }
+
+        guard let appContext, !appContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        let contextLines = appContext
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+
+        for line in contextLines {
+            if lowercasedOutput == line || lowercasedOutput.hasPrefix(line + " ") {
+                return true
+            }
+        }
+
+        if lowercasedOutput.hasPrefix("app:") && !lowerInput.hasPrefix("app:") {
+            return true
+        }
+
+        return false
     }
 }
 
@@ -259,7 +299,7 @@ private actor Qwen3PostProcessorManager {
             Qwen3PostProcessorLogging.logVerbose("Qwen3 GGUF raw output: \(raw)")
             Qwen3PostProcessorLogging.logVerbose("Qwen3 GGUF cleaned output: \(cleaned)")
             let result: String
-            if Qwen3PostProcessorOutputCleaner.shouldFallbackToInput(cleaned: cleaned, input: text) {
+            if Qwen3PostProcessorOutputCleaner.shouldFallbackToInput(cleaned: cleaned, input: text, appContext: appContext) {
                 Qwen3PostProcessorLogging.logVerbose("Qwen3 GGUF output rejected; falling back to deterministic cleanup")
                 throw NSError(domain: "Qwen3PostProcessor", code: 4, userInfo: [
                     NSLocalizedDescriptionKey: "Qwen3 GGUF output was rejected by transcript safety checks",

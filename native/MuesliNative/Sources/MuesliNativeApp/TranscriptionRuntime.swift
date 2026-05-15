@@ -278,6 +278,7 @@ actor TranscriptionCoordinator {
             enabled: enablePostProcessor,
             appContext: appContext
         ) ?? removeFillersWithLogging(result)
+        result = normalizeSpokenFormatting(result)
         let final = applyCustomWords(result, customWords: customWords)
         if !final.text.isEmpty {
             Qwen3PostProcessorLogging.logVerbose("Dictation final transcript: \(final.text)")
@@ -367,6 +368,11 @@ actor TranscriptionCoordinator {
             Qwen3PostProcessorLogging.logVerbose("FillerWordFilter skipped effective changes (\(String(format: "%.1f", elapsedMs))ms)")
         }
         return filtered
+    }
+
+    private func normalizeSpokenFormatting(_ result: SpeechTranscriptionResult) -> SpeechTranscriptionResult {
+        let normalized = DictationSpokenFormatNormalizer.apply(result.text)
+        return SpeechTranscriptionResult(text: normalized, segments: result.segments)
     }
 
     private func cleanMeetingTranscript(_ result: SpeechTranscriptionResult) -> SpeechTranscriptionResult {

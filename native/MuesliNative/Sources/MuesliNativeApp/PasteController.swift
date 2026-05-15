@@ -41,6 +41,7 @@ enum PasteController {
     static func paste(
         text: String,
         pasteboard: NSPasteboard = .general,
+        delayBeforePaste: TimeInterval = 0.05,
         simulatePasteAction: @escaping () -> Void = PasteController.simulatePaste
     ) {
         guard !text.isEmpty else { return }
@@ -52,7 +53,7 @@ enum PasteController {
         pasteboard.setString(text, forType: .string)
         let pasteChangeCount = pasteboard.changeCount
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delayBeforePaste) {
             simulatePasteAction()
 
             // Restore the original clipboard contents after the receiving app has consumed the paste.

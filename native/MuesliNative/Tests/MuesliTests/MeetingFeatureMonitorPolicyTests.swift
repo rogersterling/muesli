@@ -33,4 +33,28 @@ struct MeetingFeatureMonitorPolicyTests {
             hasActiveAutoStop: true
         ))
     }
+
+    @Test("foreground mic capture pauses detection monitor")
+    func foregroundMicCapturePausesDetectionMonitor() {
+        var config = AppConfig()
+        config.showMeetingDetectionNotification = true
+
+        #expect(!MeetingFeatureMonitorPolicy.shouldRunDetectionMonitor(
+            config: config,
+            hasActiveAutoStop: false,
+            isForegroundMicCaptureActive: true
+        ))
+    }
+
+    @Test("active auto-stop overrides foreground mic capture pause")
+    func activeAutoStopOverridesForegroundMicCapturePause() {
+        var config = AppConfig()
+        config.showMeetingDetectionNotification = false
+
+        #expect(MeetingFeatureMonitorPolicy.shouldRunDetectionMonitor(
+            config: config,
+            hasActiveAutoStop: true,
+            isForegroundMicCaptureActive: true
+        ))
+    }
 }

@@ -164,6 +164,61 @@ struct PostProcessorOptionTests {
         #expect(AppConfig().activePostProcessorId == PostProcessorOption.defaultOption.id)
     }
 
+    @Test("default system prompt includes insertion and numeric formatting guidance")
+    func defaultSystemPromptIncludesInsertionGuidance() {
+        #expect(PostProcessorOption.defaultSystemPrompt.contains("active text field"))
+        #expect(PostProcessorOption.defaultSystemPrompt.contains("Document context"))
+        #expect(PostProcessorOption.defaultSystemPrompt.contains("5:30 PM"))
+        #expect(PostProcessorOption.defaultSystemPrompt.contains("20%"))
+        #expect(PostProcessorOption.defaultSystemPrompt.contains("3:00 PM"))
+        #expect(PostProcessorOption.defaultSystemPrompt.contains("March 15"))
+    }
+
+    @Test("legacy default system prompt migrates to current default")
+    func legacyDefaultSystemPromptMigrates() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "post_processor_system_prompt": PostProcessorOption.legacyDefaultSystemPrompt,
+        ])
+
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        #expect(decoded.postProcessorSystemPrompt == PostProcessorOption.defaultSystemPrompt)
+    }
+
+    @Test("context-aware default system prompt migrates to current default")
+    func contextAwareDefaultSystemPromptMigrates() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "post_processor_system_prompt": PostProcessorOption.contextAwareDefaultSystemPromptV1,
+        ])
+
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        #expect(decoded.postProcessorSystemPrompt == PostProcessorOption.defaultSystemPrompt)
+    }
+
+    @Test("previous context-aware default system prompt migrates to current default")
+    func previousContextAwareDefaultSystemPromptMigrates() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "post_processor_system_prompt": PostProcessorOption.contextAwareDefaultSystemPromptV2,
+        ])
+
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        #expect(decoded.postProcessorSystemPrompt == PostProcessorOption.defaultSystemPrompt)
+    }
+
+    @Test("custom system prompt is preserved")
+    func customSystemPromptIsPreserved() throws {
+        let customPrompt = "Keep this custom prompt exactly."
+        let data = try JSONSerialization.data(withJSONObject: [
+            "post_processor_system_prompt": customPrompt,
+        ])
+
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        #expect(decoded.postProcessorSystemPrompt == customPrompt)
+    }
+
     @Test("unknown ids resolve to default")
     func unknownIDResolvesToDefault() {
         #expect(PostProcessorOption.resolve(id: "missing") == PostProcessorOption.defaultOption)

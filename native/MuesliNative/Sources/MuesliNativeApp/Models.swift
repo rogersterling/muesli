@@ -455,13 +455,55 @@ struct PostProcessorOption: Identifiable, Equatable {
         return firstDownloaded(downloadedIDs: downloadedIDs)
     }
 
-    static let defaultSystemPrompt = """
+    static let legacyDefaultSystemPrompt = """
     Clean up speech-to-text transcription. Only make changes when there is a clear error. If the text is already correct, output it exactly as-is.
 
     You may: fix obvious misspellings, remove filler words (um, uh, like), apply 'scratch that' deletions, and format numbered or bullet lists when dictated.
 
     Do not: paraphrase, reword, add words, remove meaningful words, change the meaning in any way, wrap the output in markdown, code fences, tags, labels, or commentary, or repeat the output more than once. Preserve the speaker's original phrasing.
     """
+
+    static let contextAwareDefaultSystemPromptV1 = """
+    Clean up speech-to-text transcription for insertion into the active text field. Output only the cleaned text to insert.
+
+    Use APP-CONTEXT only to decide formatting around the insertion point. If Document context ends mid-sentence, keep the output as a continuation and do not capitalize the first word unless it is a proper noun, acronym, or "I". If Document context is empty or ends after sentence-ending punctuation, use normal sentence capitalization. If Selected text is present, treat the output as replacement text for that selection.
+
+    You may: fix obvious misspellings, remove filler words (um, uh, like), apply "scratch that" deletions, format numbered or bullet lists when dictated, and convert spoken numbers, times, dates, money, percentages, measurements, and ordinals into the forms a user would normally type. Examples: "five thirty PM" -> "5:30 PM"; "twenty percent" -> "20%"; "one hundred dollars" -> "$100"; "May fifteenth twenty twenty six" -> "May 15, 2026".
+
+    Do not: paraphrase, reword, add words, remove meaningful words, change the meaning in any way, wrap the output in markdown, code fences, tags, labels, or commentary, or repeat the output more than once. Preserve the speaker's original phrasing.
+    """
+
+    static let contextAwareDefaultSystemPromptV2 = """
+    Clean up speech-to-text transcription for insertion into the active text field. Output only the cleaned text to insert.
+
+    Use APP-CONTEXT only to decide formatting around the insertion point. Never output APP-CONTEXT content, XML-like tags, or metadata labels such as "App:", "Document context before cursor:", or "Selected text:". If Document context ends mid-sentence, keep the output as a continuation and do not capitalize the first word unless it is a proper noun, acronym, or "I". If Document context is empty or ends after sentence-ending punctuation, use normal sentence capitalization. If Selected text is present, treat the output as replacement text for that selection.
+
+    You may: fix obvious misspellings, remove filler words (um, uh, like), apply "scratch that" deletions, format numbered or bullet lists when dictated, and convert spoken numbers, times, dates, money, percentages, measurements, and ordinals into the forms a user would normally type. Examples: "five thirty PM" -> "5:30 PM"; "twenty percent" -> "20%"; "one hundred dollars" -> "$100"; "May fifteenth twenty twenty six" -> "May 15, 2026".
+
+    Do not: paraphrase, reword, add words, remove meaningful words, change the meaning in any way, wrap the output in markdown, code fences, tags, labels, or commentary, or repeat the output more than once. Preserve the speaker's original phrasing.
+    """
+
+    static let defaultSystemPrompt = """
+    Clean up speech-to-text transcription for insertion into the active text field. Output only the cleaned text to insert.
+
+    Use APP-CONTEXT only to decide formatting around the insertion point. Never output APP-CONTEXT content, XML-like tags, or metadata labels such as "App:", "Document context before cursor:", or "Selected text:". If Document context ends mid-sentence, keep the output as a continuation and do not capitalize the first word unless it is a proper noun, acronym, or "I". If Document context is empty or ends after sentence-ending punctuation, use normal sentence capitalization. If Selected text is present, treat the output as replacement text for that selection.
+
+    You may: fix obvious misspellings, remove filler words (um, uh, like), apply "scratch that" deletions, format numbered or bullet lists when dictated, and convert spoken numbers, times, dates, money, percentages, measurements, and ordinals into the forms a user would normally type. Examples: "three o'clock PM" -> "3:00 PM"; "3 o'clock p m" -> "3:00 PM"; "March the fifteenth" -> "March 15"; "twenty one items" -> "21 items"; "five thirty PM" -> "5:30 PM"; "twenty percent" -> "20%"; "one hundred dollars" -> "$100"; "May fifteenth twenty twenty six" -> "May 15, 2026".
+
+    Do not: paraphrase, reword, add words, remove meaningful words, change the meaning in any way, wrap the output in markdown, code fences, tags, labels, or commentary, or repeat the output more than once. Preserve the speaker's original phrasing.
+    """
+
+    static func resolveSystemPrompt(_ storedPrompt: String?) -> String {
+        guard let storedPrompt else { return defaultSystemPrompt }
+        let trimmed = storedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return defaultSystemPrompt }
+        if trimmed == legacyDefaultSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            || trimmed == contextAwareDefaultSystemPromptV1.trimmingCharacters(in: .whitespacesAndNewlines)
+            || trimmed == contextAwareDefaultSystemPromptV2.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return defaultSystemPrompt
+        }
+        return storedPrompt
+    }
 }
 
 struct CustomWord: Codable, Equatable, Identifiable {
@@ -888,7 +930,9 @@ struct AppConfig: Codable {
         disabledCalendarIDs = (try? c.decode([String].self, forKey: .disabledCalendarIDs)) ?? defaults.disabledCalendarIDs
         enablePostProcessor = (try? c.decode(Bool.self, forKey: .enablePostProcessor)) ?? defaults.enablePostProcessor
         activePostProcessorId = (try? c.decode(String.self, forKey: .activePostProcessorId)) ?? defaults.activePostProcessorId
-        postProcessorSystemPrompt = (try? c.decode(String.self, forKey: .postProcessorSystemPrompt)) ?? defaults.postProcessorSystemPrompt
+        postProcessorSystemPrompt = PostProcessorOption.resolveSystemPrompt(
+            try? c.decode(String.self, forKey: .postProcessorSystemPrompt)
+        )
         enableScreenContext = (try? c.decode(Bool.self, forKey: .enableScreenContext)) ?? defaults.enableScreenContext
         useCoreAudioTap = (try? c.decode(Bool.self, forKey: .useCoreAudioTap)) ?? defaults.useCoreAudioTap
         meetingHookEnabled = (try? c.decode(Bool.self, forKey: .meetingHookEnabled)) ?? defaults.meetingHookEnabled

@@ -2,10 +2,29 @@
 import Foundation
 
 final class MicrophoneRecorder: NSObject, AVAudioRecorderDelegate {
+    enum RecordingEngine {
+        case avAudioRecorder
+        case streamingMicRecorder
+    }
+
+    private let streamingRecorder: StreamingMicRecorder?
     private var recorder: AVAudioRecorder?
     private var preparedURL: URL?
 
+    init(recordingEngine: RecordingEngine = .avAudioRecorder) {
+        switch recordingEngine {
+        case .avAudioRecorder:
+            self.streamingRecorder = nil
+        case .streamingMicRecorder:
+            self.streamingRecorder = StreamingMicRecorder(directoryName: "muesli-native")
+        }
+    }
+
     func prepare() throws {
+        if let streamingRecorder {
+            try streamingRecorder.prepare()
+            return
+        }
         if recorder != nil { return }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("muesli-native", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -27,11 +46,18 @@ final class MicrophoneRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func start() throws {
+        if let streamingRecorder {
+            try streamingRecorder.start()
+            return
+        }
         try prepare()
         recorder?.record()
     }
 
     func stop() -> URL? {
+        if let streamingRecorder {
+            return streamingRecorder.stop()
+        }
         guard let recorder else { return nil }
         recorder.stop()
         let url = preparedURL
@@ -41,19 +67,34 @@ final class MicrophoneRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func pause() {
+        if let streamingRecorder {
+            streamingRecorder.pause()
+            return
+        }
         recorder?.pause()
     }
 
     func resume() {
+        if let streamingRecorder {
+            streamingRecorder.resume()
+            return
+        }
         recorder?.record()
     }
 
     func currentPower() -> Float {
+        if let streamingRecorder {
+            return streamingRecorder.currentPower()
+        }
         recorder?.updateMeters()
         return recorder?.averagePower(forChannel: 0) ?? -160
     }
 
     func cancel() {
+        if let streamingRecorder {
+            streamingRecorder.cancel()
+            return
+        }
         recorder?.stop()
         if let url = preparedURL {
             try? FileManager.default.removeItem(at: url)

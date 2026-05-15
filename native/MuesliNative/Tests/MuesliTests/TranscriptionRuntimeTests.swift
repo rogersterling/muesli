@@ -321,4 +321,156 @@ struct Qwen3PostProcessingOutputCleanerTests {
             input: "um yeah"
         ))
     }
+
+    @Test("rejects leaked app context output")
+    func rejectsLeakedAppContextOutput() {
+        let appContext = """
+        App: Superset
+        Document context before cursor: Revenue dashboard
+        """
+        #expect(Qwen3PostProcessorOutputCleaner.shouldFallbackToInput(
+            cleaned: "App: Superset App: Superset App: Superset",
+            input: "show me the yearly DRR revenue",
+            appContext: appContext
+        ))
+    }
+
+    @Test("rejects leaked document context output")
+    func rejectsLeakedDocumentContextOutput() {
+        #expect(Qwen3PostProcessorOutputCleaner.shouldFallbackToInput(
+            cleaned: "Document context before cursor: add the rollout numbers here",
+            input: "and include the rollout numbers",
+            appContext: "App: Notes"
+        ))
+    }
+}
+
+@Suite("Dictation spoken format normalizer")
+struct DictationSpokenFormatNormalizerTests {
+
+    @Test("normalizes spoken o'clock times with meridiem")
+    func normalizesOClockTimesWithMeridiem() {
+        #expect(
+            DictationSpokenFormatNormalizer.apply("What about using the numbers three o'clock p m?") ==
+                "What about using the numbers 3:00 PM?"
+        )
+    }
+
+    @Test("normalizes digit o'clock times with meridiem")
+    func normalizesDigitOClockTimesWithMeridiem() {
+        #expect(
+            DictationSpokenFormatNormalizer.apply("Let's meet at 3 o'clock pm.") ==
+                "Let's meet at 3:00 PM."
+        )
+    }
+
+    @Test("normalizes spoken month day dates")
+    func normalizesSpokenMonthDayDates() {
+        #expect(
+            DictationSpokenFormatNormalizer.apply("What about if I say March the fifteenth?") ==
+                "What about if I say March 15?"
+        )
+    }
+}
+
+@Suite("Dictation insertion formatter")
+struct DictationInsertionFormatterTests {
+
+    @Test("continues a mid-sentence dictation with lowercase and leading space")
+    func continuesMidSentenceWithLowercaseAndLeadingSpace() {
+        let context = DictationContext(
+            appName: "Notes",
+            bundleID: "com.apple.Notes",
+            documentContext: "I think this is",
+            selectedText: "",
+            url: nil
+        )
+
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "And then we ship",
+            context: context
+        ) == " and then we ship")
+    }
+
+    @Test("adds a leading space between repeated utterances")
+    func addsLeadingSpaceBetweenRepeatedUtterances() {
+        let context = DictationContext(
+            appName: "Chrome",
+            bundleID: "com.google.Chrome",
+            documentContext: "Okay, let's see if this is working now",
+            selectedText: "",
+            url: nil
+        )
+
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "Seems to be finally working.",
+            context: context
+        ) == " Seems to be finally working.")
+    }
+
+    @Test("uses cursor offset as spacing fallback when context is unreadable")
+    func usesCursorOffsetSpacingFallback() {
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "Seems to be finally working.",
+            context: nil,
+            hasTextBeforeCursorWhenContextUnavailable: true
+        ) == " Seems to be finally working.")
+    }
+
+    @Test("uses recent insertion context when accessibility cannot read the field")
+    func usesRecentInsertionContextWhenFieldContextIsUnreadable() {
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "Actually I think it is working.",
+            context: nil,
+            recentInsertionContext: "Okay, let's see if this is working now"
+        ) == " actually I think it is working.")
+    }
+
+    @Test("does not add a leading space after existing whitespace")
+    func respectsExistingWhitespace() {
+        let context = DictationContext(
+            appName: "Notes",
+            bundleID: "com.apple.Notes",
+            documentContext: "I think this is ",
+            selectedText: "",
+            url: nil
+        )
+
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "And then we ship",
+            context: context
+        ) == "and then we ship")
+    }
+
+    @Test("keeps sentence start capitalization after punctuation")
+    func preservesSentenceStartAfterPunctuation() {
+        let context = DictationContext(
+            appName: "Notes",
+            bundleID: "com.apple.Notes",
+            documentContext: "I think this is done.",
+            selectedText: "",
+            url: nil
+        )
+
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "Next step is launch",
+            context: context
+        ) == " Next step is launch")
+    }
+
+    @Test("does not add a leading space when replacing selected text")
+    func skipsLeadingSpaceForSelectionReplacement() {
+        let context = DictationContext(
+            appName: "Notes",
+            bundleID: "com.apple.Notes",
+            documentContext: "I think this is",
+            selectedText: "wrong",
+            url: nil
+        )
+
+        #expect(DictationInsertionFormatter.prepareForInsertion(
+            "Correct",
+            context: context
+        ) == "Correct")
+    }
 }

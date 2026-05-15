@@ -11,8 +11,10 @@ final class StreamingMicRecorder {
     var onPCMSamples: (([Int16]) -> Void)?
 
     private let engine = AVAudioEngine()
+    private let directoryName: String
     private let lock = OSAllocatedUnfairLock(initialState: FileState())
     private var isRunning = false
+    private var hasInstalledTap = false
 
     private struct FileState {
         var fileHandle: FileHandle?
@@ -24,6 +26,10 @@ final class StreamingMicRecorder {
 
     private static let sampleRate: Double = 16_000
     private static let bufferSize: AVAudioFrameCount = 4096 // 256ms at 16kHz
+
+    init(directoryName: String = "muesli-meeting-mic") {
+        self.directoryName = directoryName
+    }
 
     func prepare() throws {
         let inputNode = engine.inputNode
@@ -38,10 +44,9 @@ final class StreamingMicRecorder {
     func start() throws {
         guard !isRunning else { return }
 
-        let fileState = try createNewFile()
-        lock.withLock { $0 = fileState }
-
         let inputNode = engine.inputNode
+        removeInputTapIfNeeded()
+
         let hwFormat = inputNode.outputFormat(forBus: 0)
 
         // Target format: 16kHz mono Float32
@@ -61,6 +66,9 @@ final class StreamingMicRecorder {
         let converter: AVAudioConverter? = needsConversion
             ? AVAudioConverter(from: hwFormat, to: targetFormat)
             : nil
+
+        let fileState = try createNewFile()
+        lock.withLock { $0 = fileState }
 
         inputNode.installTap(onBus: 0, bufferSize: Self.bufferSize, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
@@ -123,9 +131,15 @@ final class StreamingMicRecorder {
             let floats = Array(UnsafeBufferPointer(start: floatData, count: frameCount))
             self.onAudioBuffer?(floats)
         }
+        hasInstalledTap = true
 
-        try engine.start()
-        isRunning = true
+        do {
+            try engine.start()
+            isRunning = true
+        } catch {
+            cleanupFailedStart()
+            throw error
+        }
     }
 
     /// Rotate to a new file. Returns the completed WAV URL. No audio gap.
@@ -154,8 +168,9 @@ final class StreamingMicRecorder {
         guard isRunning else { return nil }
         isRunning = false
 
-        engine.inputNode.removeTap(onBus: 0)
+        removeInputTapIfNeeded()
         engine.stop()
+        engine.reset()
 
         let finalState = lock.withLock { state -> FileState in
             let old = state
@@ -183,8 +198,9 @@ final class StreamingMicRecorder {
 
     func cancel() {
         isRunning = false
-        engine.inputNode.removeTap(onBus: 0)
+        removeInputTapIfNeeded()
         engine.stop()
+        engine.reset()
         onAudioBuffer = nil
         onPCMSamples = nil
 
@@ -207,7 +223,7 @@ final class StreamingMicRecorder {
 
     private func createNewFile() throws -> FileState {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("muesli-meeting-mic", isDirectory: true)
+            .appendingPathComponent(directoryName, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
         FileManager.default.createFile(atPath: url.path, contents: nil)
@@ -219,6 +235,29 @@ final class StreamingMicRecorder {
         // Write placeholder WAV header (will be finalized on close)
         handle.write(WavWriter.header(dataSize: 0))
         return FileState(fileHandle: handle, fileURL: url, bytesWritten: 0)
+    }
+
+    private func removeInputTapIfNeeded() {
+        // AVAudioNode throws an uncaught Objective-C exception if installTap is
+        // called while a stale tap is still present. removeTap is safe even when
+        // no tap is installed, so prefer defensive cleanup before every start.
+        engine.inputNode.removeTap(onBus: 0)
+        hasInstalledTap = false
+    }
+
+    private func cleanupFailedStart() {
+        isRunning = false
+        removeInputTapIfNeeded()
+        engine.stop()
+        engine.reset()
+        let state = lock.withLock { state -> FileState in
+            let old = state
+            state = FileState()
+            return old
+        }
+        if let url = state.fileURL {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     private func finalizeFile(_ state: FileState) -> URL? {

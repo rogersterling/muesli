@@ -4,7 +4,13 @@ enum MeetingFeatureMonitorPolicy {
             || config.showScheduledMeetingNotifications
     }
 
-    static func shouldRunDetectionMonitor(config: AppConfig, hasActiveAutoStop: Bool) -> Bool {
-        config.showMeetingDetectionNotification || hasActiveAutoStop
+    static func shouldRunDetectionMonitor(
+        config: AppConfig,
+        hasActiveAutoStop: Bool,
+        isForegroundMicCaptureActive: Bool = false
+    ) -> Bool {
+        if hasActiveAutoStop { return true }
+        guard !isForegroundMicCaptureActive else { return false }
+        return config.showMeetingDetectionNotification
     }
 }

@@ -12,34 +12,85 @@ struct DictationContext {
     let url: String?
 }
 
+struct DictationContextSnapshot {
+    let context: DictationContext
+    let insertionTarget: DictationInsertionTarget?
+}
+
+struct DictationInsertionTarget {
+    let app: NSRunningApplication
+    let bundleID: String
+    let element: AXUIElement
+    let selectedRange: CFRange?
+    let role: String
+    let rect: CGRect?
+
+    var hasTextBeforeSelection: Bool {
+        guard let selectedRange else { return false }
+        return selectedRange.location > 0 && selectedRange.length == 0
+    }
+
+    func representsSameTarget(as other: DictationInsertionTarget) -> Bool {
+        guard app.processIdentifier == other.app.processIdentifier,
+              bundleID == other.bundleID,
+              role == other.role else {
+            return false
+        }
+        if CFEqual(element, other.element) {
+            return true
+        }
+        guard let rect, let otherRect = other.rect else {
+            return false
+        }
+        return abs(rect.minX - otherRect.minX) < 2
+            && abs(rect.minY - otherRect.minY) < 2
+            && abs(rect.width - otherRect.width) < 2
+            && abs(rect.height - otherRect.height) < 2
+    }
+}
+
 enum DictationContextCapture {
 
     /// Captures focused app name + text context via Accessibility API.
     /// Lightweight and deterministic — no screenshots, no OCR.
     static func capture() -> DictationContext {
+        captureSnapshot().context
+    }
+
+    static func captureSnapshot() -> DictationContextSnapshot {
         let app = NSWorkspace.shared.frontmostApplication
         let appName = app?.localizedName ?? "Unknown"
         let bundleID = app?.bundleIdentifier ?? ""
 
         var docContext = ""
         var selectedText = ""
+        var insertionTarget: DictationInsertionTarget?
 
         if let app, AXIsProcessTrusted(), let focusedElement = focusedUIElement(for: app) {
             docContext = textBeforeCursor(focusedElement, maxChars: 200)
             selectedText = axStringValue(focusedElement, attribute: kAXSelectedTextAttribute as String)
+            insertionTarget = DictationInsertionTarget(
+                app: app,
+                bundleID: bundleID,
+                element: focusedElement,
+                selectedRange: selectedTextRange(focusedElement),
+                role: axStringValue(focusedElement, attribute: kAXRoleAttribute as String),
+                rect: rect(focusedElement)
+            )
         }
 
         let url = browserURL(for: app)
 
-        fputs("[muesli-native] dictation context: app=\(appName) docContext=\(docContext.count) chars selectedText=\(selectedText.count) chars url=\(url ?? "none")\n", stderr)
+        fputs("[muesli-native] dictation context: app=\(appName) docContext=\(docContext.count) chars selectedText=\(selectedText.count) chars target=\(insertionTarget?.role ?? "none") range=\(insertionTarget?.selectedRange.map { "\($0.location),\($0.length)" } ?? "none") url=\(url ?? "none")\n", stderr)
 
-        return DictationContext(
+        let context = DictationContext(
             appName: appName,
             bundleID: bundleID,
             documentContext: docContext,
             selectedText: selectedText,
             url: url
         )
+        return DictationContextSnapshot(context: context, insertionTarget: insertionTarget)
     }
 
     /// Formats for the post-processor LLM prompt. Compact, high-signal.
@@ -49,7 +100,7 @@ enum DictationContextCapture {
             parts += " (\(url))"
         }
         if !ctx.documentContext.isEmpty {
-            parts += "\nDocument context: \(ctx.documentContext)"
+            parts += "\nDocument context before cursor: \(ctx.documentContext)"
         }
         if !ctx.selectedText.isEmpty {
             parts += "\nSelected text: \(ctx.selectedText)"
@@ -82,27 +133,21 @@ enum DictationContextCapture {
     /// AX string-for-range attribute. Falls back to suffix of full value if unsupported.
     private static func textBeforeCursor(_ element: AXUIElement, maxChars: Int) -> String {
         // Try cursor-aware read via kAXSelectedTextRangeAttribute + kAXStringForRangeParameterizedAttribute
-        var rangeRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
-           let rangeValue = rangeRef,
-           CFGetTypeID(rangeValue) == AXValueGetTypeID() {
-            var cfRange = CFRange(location: 0, length: 0)
-            if AXValueGetValue(rangeValue as! AXValue, .cfRange, &cfRange) {
-                let cursorPos = cfRange.location
-                let prefixLen = min(cursorPos, maxChars)
-                if prefixLen > 0 {
-                    var sliceRange = CFRange(location: cursorPos - prefixLen, length: prefixLen)
-                    let axRange: AXValue? = AXValueCreate(.cfRange, &sliceRange)
-                    if let axRange {
-                        var sliceRef: CFTypeRef?
-                        if AXUIElementCopyParameterizedAttributeValue(
-                            element,
-                            kAXStringForRangeParameterizedAttribute as CFString,
-                            axRange,
-                            &sliceRef
-                        ) == .success, let text = sliceRef as? String {
-                            return text
-                        }
+        if let cfRange = selectedTextRange(element) {
+            let cursorPos = cfRange.location
+            let prefixLen = min(cursorPos, maxChars)
+            if prefixLen > 0 {
+                var sliceRange = CFRange(location: cursorPos - prefixLen, length: prefixLen)
+                let axRange: AXValue? = AXValueCreate(.cfRange, &sliceRange)
+                if let axRange {
+                    var sliceRef: CFTypeRef?
+                    if AXUIElementCopyParameterizedAttributeValue(
+                        element,
+                        kAXStringForRangeParameterizedAttribute as CFString,
+                        axRange,
+                        &sliceRef
+                    ) == .success, let text = sliceRef as? String {
+                        return text
                     }
                 }
             }
@@ -121,6 +166,41 @@ enum DictationContextCapture {
             return "..." + String(full.suffix(maxChars))
         }
         return full
+    }
+
+    private static func selectedTextRange(_ element: AXUIElement) -> CFRange? {
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let rangeValue = rangeRef,
+              CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
+            return nil
+        }
+        var cfRange = CFRange(location: 0, length: 0)
+        guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &cfRange) else { return nil }
+        return cfRange
+    }
+
+    private static func rect(_ element: AXUIElement) -> CGRect? {
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionRef) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let positionValue = positionRef,
+              let sizeValue = sizeRef,
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &position),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
+              size.width > 0,
+              size.height > 0 else {
+            return nil
+        }
+        return CGRect(origin: position, size: size)
     }
 
     private static func axStringValue(_ element: AXUIElement, attribute: String) -> String {

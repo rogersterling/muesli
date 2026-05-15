@@ -230,9 +230,9 @@ struct SettingsView: View {
 
     private var screenContextDescription: String {
         if screenRecordingGranted {
-            return "Adds nearby app text and meeting OCR context. Processed on-device."
+            return "Adds focused app text and optional OCR context to meeting summaries. Processed on-device."
         }
-        return "Requires Screen Recording. Adds nearby app text and meeting OCR context."
+        return "Requires Screen Recording. Adds focused app text and optional OCR context to meeting summaries."
     }
 
     @ViewBuilder
@@ -421,8 +421,6 @@ struct SettingsView: View {
                             .frame(width: controlWidth, alignment: .trailing)
                     }
                 }
-                Divider().background(MuesliTheme.surfaceBorder)
-                screenContextRow("App context")
             }
         }
     }

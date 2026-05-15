@@ -19,6 +19,23 @@ private enum DictationOutputMode {
     }
 }
 
+private struct RecentDictationInsertion {
+    let target: DictationInsertionTarget
+    let text: String
+    let insertedAt: Date
+
+    func contextIfFresh(for nextTarget: DictationInsertionTarget?, now: Date = Date()) -> String? {
+        guard let nextTarget,
+              now.timeIntervalSince(insertedAt) < 180,
+              nextTarget.representsSameTarget(as: target) else {
+            return nil
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.suffix(200))
+    }
+}
+
 struct MeetingResummarizationPlan: Equatable {
     let promptTitle: String
     let persistedTitle: String
@@ -177,6 +194,8 @@ final class MuesliController: NSObject {
     private var openWindowCount = 0
     private var lastExternalApp: NSRunningApplication?
     private var capturedDictationContext: DictationContext?
+    private var capturedDictationInsertionTarget: DictationInsertionTarget?
+    private var recentDictationInsertion: RecentDictationInsertion?
     private var workspaceObserver: NSObjectProtocol?
     private var dataDidChangeObserver: NSObjectProtocol?
     private var isStartingMeetingRecording = false
@@ -194,6 +213,7 @@ final class MuesliController: NSObject {
     private var meetingStartTask: Task<Void, Never>?
     private var meetingStartMeetingID: Int64?
     private var canceledMeetingStartIDs = Set<Int64>()
+    private var isForegroundMicCaptureActive = false
 
     init(
         runtime: RuntimePaths,
@@ -1211,7 +1231,8 @@ final class MuesliController: NSObject {
         let shouldRun = meetingFeatureMonitorsAllowed
             && MeetingFeatureMonitorPolicy.shouldRunDetectionMonitor(
                 config: config,
-                hasActiveAutoStop: activeMeetingAutoStop.isArmed
+                hasActiveAutoStop: activeMeetingAutoStop.isArmed,
+                isForegroundMicCaptureActive: isForegroundMicCaptureActive
             )
         if shouldRun && !meetingDetectionMonitorStarted {
             meetingMonitor.start()
@@ -3839,6 +3860,12 @@ final class MuesliController: NSObject {
         }
     }
 
+    private func setForegroundMicCaptureActive(_ isActive: Bool) {
+        guard isForegroundMicCaptureActive != isActive else { return }
+        isForegroundMicCaptureActive = isActive
+        syncMeetingDetectionMonitor()
+    }
+
     private func presentMeetingDetection(_ candidate: MeetingCandidate) {
         guard config.showMeetingDetectionNotification,
               !isShowingCalendarNotification,
@@ -4317,6 +4344,8 @@ final class MuesliController: NSObject {
     private func handlePrepare() {
         if isMeetingCapturingAudio { return }
         fputs("[muesli-native] prepare\n", stderr)
+        captureDictationContext(for: defaultDictationOutputMode, replaceExisting: true)
+        setForegroundMicCaptureActive(true)
         meetingMonitor.suppressWhileActive()
         meetingMonitor.refreshState()
         do {
@@ -4324,6 +4353,7 @@ final class MuesliController: NSObject {
             setState(.preparing)
         } catch {
             fputs("[muesli-native] recorder prepare failed: \(error)\n", stderr)
+            setForegroundMicCaptureActive(false)
             setState(.idle)
             meetingMonitor.resumeAfterCooldown()
             meetingMonitor.refreshState()
@@ -4344,31 +4374,48 @@ final class MuesliController: NSObject {
         appState.isVoiceNoteRecording = false
     }
 
+    private func captureDictationContextIfNeeded() {
+        captureDictationContext(for: currentDictationOutputMode, replaceExisting: true)
+    }
+
+    private func captureDictationContext(for outputMode: DictationOutputMode, replaceExisting: Bool) {
+        if replaceExisting {
+            clearCapturedDictationContext()
+        } else if capturedDictationContext != nil || capturedDictationInsertionTarget != nil {
+            return
+        }
+        guard outputMode == .paste, !isDictationTestMode else { return }
+        let snapshot = DictationContextCapture.captureSnapshot()
+        capturedDictationContext = snapshot.context
+        capturedDictationInsertionTarget = snapshot.insertionTarget
+    }
+
+    private func clearCapturedDictationContext() {
+        capturedDictationContext = nil
+        capturedDictationInsertionTarget = nil
+    }
+
     private func handleStart() {
         if isMeetingCapturingAudio { return }
 
         // Nemotron is handsfree-only — block hold-to-talk and show a hint
         if selectedBackend.backend == "nemotron" {
             recorder.cancel()
+            setForegroundMicCaptureActive(false)
             fputs("[muesli-native] hold-to-talk blocked for Nemotron, showing warning\n", stderr)
             indicator.showWarning("Double-tap for Nemotron handsfree mode", icon: "⚡")
             return
         }
 
         fputs("[muesli-native] recording start\n", stderr)
+        setForegroundMicCaptureActive(true)
         meetingMonitor.suppressWhileActive()
         beginDictationOutput()
+        captureDictationContext(for: currentDictationOutputMode, replaceExisting: false)
 
         do {
             try recorder.start()
             dictationStartedAt = Date()
-            capturedDictationContext = nil
-            if config.enableScreenContext
-                && CGPreflightScreenCaptureAccess()
-                && config.enablePostProcessor
-                && !isDictationTestMode {
-                capturedDictationContext = DictationContextCapture.capture()
-            }
             if !isDictationTestMode {
                 indicator.powerProvider = { [weak self] in
                     self?.recorder.currentPower() ?? -160
@@ -4381,6 +4428,8 @@ final class MuesliController: NSObject {
             SoundController.playDictationStart(enabled: config.soundEnabled && !isDictationTestMode)
         } catch {
             fputs("[muesli-native] recorder start failed: \(error)\n", stderr)
+            setForegroundMicCaptureActive(false)
+            clearCapturedDictationContext()
             resetDictationOutputMode()
             setState(.idle)
             meetingMonitor.resumeAfterCooldown()
@@ -4432,8 +4481,9 @@ final class MuesliController: NSObject {
         }
 
         recorder.cancel()
-        capturedDictationContext = nil
+        clearCapturedDictationContext()
         dictationStartedAt = nil
+        setForegroundMicCaptureActive(false)
         setState(.idle)
         meetingMonitor.resumeAfterCooldown()
     }
@@ -4441,8 +4491,10 @@ final class MuesliController: NSObject {
     private func handleToggleStart(outputMode: DictationOutputMode? = nil) {
         if isMeetingCapturingAudio { return }
         fputs("[muesli-native] toggle dictation start\n", stderr)
+        setForegroundMicCaptureActive(true)
         meetingMonitor.suppressWhileActive()
         beginDictationOutput(mode: outputMode)
+        captureDictationContextIfNeeded()
 
         // Nemotron streaming: live text at cursor in handsfree mode too
         if selectedBackend.backend == "nemotron" {
@@ -4462,19 +4514,14 @@ final class MuesliController: NSObject {
             try recorder.prepare()
             try recorder.start()
             dictationStartedAt = Date()
-            capturedDictationContext = nil
-            if config.enableScreenContext
-                && CGPreflightScreenCaptureAccess()
-                && config.enablePostProcessor
-                && !isDictationTestMode {
-                capturedDictationContext = DictationContextCapture.capture()
-            }
             indicator.powerProvider = { [weak self] in
                 self?.recorder.currentPower() ?? -160
             }
             indicator.setToggleDictation(true, config: config)
         } catch {
             fputs("[muesli-native] toggle start failed: \(error)\n", stderr)
+            setForegroundMicCaptureActive(false)
+            clearCapturedDictationContext()
             resetDictationOutputMode()
             setState(.idle)
             meetingMonitor.resumeAfterCooldown()
@@ -4514,6 +4561,7 @@ final class MuesliController: NSObject {
             }
             _streamingDictationController = nil
             previousStreamText = ""
+            setForegroundMicCaptureActive(false)
 
             let duration = max(Date().timeIntervalSince(startedAt), 0)
             let cleaned = FillerWordFilter.apply(finalText)
@@ -4543,11 +4591,14 @@ final class MuesliController: NSObject {
         // Standard path: stop recording → transcribe → paste
         guard let wavURL = recorder.stop() else {
             fputs("[muesli-native] stop without wav\n", stderr)
+            setForegroundMicCaptureActive(false)
+            clearCapturedDictationContext()
             resetDictationOutputMode()
             setState(.idle)
             meetingMonitor.resumeAfterCooldown()
             return
         }
+        setForegroundMicCaptureActive(false)
         let duration = max(Date().timeIntervalSince(startedAt), 0)
         if duration < 0.3 {
             fputs("[muesli-native] discarded short recording\n", stderr)
@@ -4555,6 +4606,7 @@ final class MuesliController: NSObject {
             if isDictationTestMode {
                 dictationTestCallback?("")
             }
+            clearCapturedDictationContext()
             resetDictationOutputMode()
             setState(.idle)
             meetingMonitor.resumeAfterCooldown()
@@ -4566,6 +4618,8 @@ final class MuesliController: NSObject {
         let outputMode = currentDictationOutputMode
         let transcriptionBackend = isTestMode ? (dictationTestBackend ?? selectedBackend) : selectedBackend
         let transcriptionLanguage = isTestMode ? (dictationTestCohereLanguage ?? config.resolvedCohereLanguage) : config.resolvedCohereLanguage
+        let dictationContext = capturedDictationContext
+        let dictationInsertionTarget = capturedDictationInsertionTarget
         let task = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -4579,7 +4633,7 @@ final class MuesliController: NSObject {
                     cohereLanguage: transcriptionLanguage,
                     enablePostProcessor: self.isPostProcessorReady,
                     customWords: self.serializedCustomWords(),
-                    appContext: self.capturedDictationContext.map { DictationContextCapture.formatForPrompt($0) }
+                    appContext: dictationContext.map { DictationContextCapture.formatForPrompt($0) }
                 )
                 // Drop result if test was cancelled (user navigated away)
                 try Task.checkCancellation()
@@ -4589,6 +4643,7 @@ final class MuesliController: NSObject {
                 if isTestMode {
                     await MainActor.run {
                         self.dictationTestCallback?(text)
+                        self.clearCapturedDictationContext()
                         self.resetDictationOutputMode()
                         self.setState(.idle)
                         self.meetingMonitor.resumeAfterCooldown()
@@ -4601,13 +4656,14 @@ final class MuesliController: NSObject {
                 }
                 guard !text.isEmpty else {
                     await MainActor.run {
+                        self.clearCapturedDictationContext()
                         self.resetDictationOutputMode()
                         self.setState(.idle)
                         self.meetingMonitor.resumeAfterCooldown()
                     }
                     return
                 }
-                let appContextString = self.capturedDictationContext.map { DictationContextCapture.formatForStorage($0) } ?? ""
+                let appContextString = dictationContext.map { DictationContextCapture.formatForStorage($0) } ?? ""
                 _ = try? self.dictationStore.insertDictation(
                     text: text,
                     durationSeconds: duration,
@@ -4616,14 +4672,28 @@ final class MuesliController: NSObject {
                     endedAt: Date()
                 )
                 await MainActor.run {
-                    self.capturedDictationContext = nil
+                    self.clearCapturedDictationContext()
                     self.statusBarController?.refresh()
                     self.historyWindowController?.reload()
                     self.syncAppState()
                     if outputMode == .voiceNote {
                         SoundController.playDictationInsert(enabled: self.config.soundEnabled)
                     } else {
-                        PasteController.paste(text: text)
+                        let recentInsertionContext = self.recentDictationInsertion?.contextIfFresh(for: dictationInsertionTarget)
+                        let insertionText = DictationInsertionFormatter.prepareForInsertion(
+                            text,
+                            context: dictationContext,
+                            recentInsertionContext: recentInsertionContext,
+                            hasTextBeforeCursorWhenContextUnavailable: dictationInsertionTarget?.hasTextBeforeSelection == true
+                        )
+                        PasteController.paste(text: insertionText)
+                        if let dictationInsertionTarget {
+                            self.recentDictationInsertion = RecentDictationInsertion(
+                                target: dictationInsertionTarget,
+                                text: insertionText,
+                                insertedAt: Date()
+                            )
+                        }
                         SoundController.playDictationInsert(enabled: self.config.soundEnabled)
                     }
                     self.resetDictationOutputMode()
@@ -4637,6 +4707,7 @@ final class MuesliController: NSObject {
             } catch is CancellationError {
                 fputs("[muesli-native] test dictation cancelled\n", stderr)
                 await MainActor.run {
+                    self.clearCapturedDictationContext()
                     self.resetDictationOutputMode()
                     self.setState(.idle)
                     self.meetingMonitor.resumeAfterCooldown()
@@ -4647,6 +4718,7 @@ final class MuesliController: NSObject {
                     if self.isDictationTestMode {
                         self.dictationTestFailureCallback?(self.userFacingDictationTestError(error))
                     }
+                    self.clearCapturedDictationContext()
                     self.resetDictationOutputMode()
                     self.setState(.idle)
                     self.meetingMonitor.resumeAfterCooldown()
