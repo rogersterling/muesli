@@ -542,7 +542,10 @@ final class MuesliController: NSObject {
     private func applyApplicationBranding() {
         if let customLogo = AppBrandingAssets.image(at: config.customLogoPath) {
             NSApplication.shared.applicationIconImage = customLogo
-        } else if let appIcon = runtime.appIcon, let image = NSImage(contentsOf: appIcon) {
+        } else if let image = AppBrandingAssets.accentedDefaultAppIcon(
+            accentHex: config.recordingColorHex,
+            fallbackURL: runtime.appIcon
+        ) {
             NSApplication.shared.applicationIconImage = image
         }
 
@@ -643,7 +646,7 @@ final class MuesliController: NSObject {
     func performSearch(query: String) {
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        appState.searchQuery = trimmed
+        appState.searchQuery = query
         guard !trimmed.isEmpty else {
             appState.searchResultDictations = []
             appState.searchResultMeetings = []

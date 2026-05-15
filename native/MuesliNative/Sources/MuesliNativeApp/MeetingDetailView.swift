@@ -160,36 +160,20 @@ struct MeetingDetailView: View {
                 .buttonStyle(.plain)
             }
 
-            HStack(alignment: .top, spacing: MuesliTheme.spacing24) {
-                VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
-                    MarqueeTitleTextField(
-                        text: $editableTitle,
-                        onSubmit: {
-                            controller.updateMeetingTitle(id: meeting.id, title: editableTitle)
-                        },
-                        onTextChange: {
-                            debounceSaveTitle(meetingID: meeting.id)
-                        }
-                    )
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: MuesliTheme.spacing24) {
+                    meetingTitleBlock(meeting, appliedTemplate: appliedTemplate)
 
-                    HStack(spacing: MuesliTheme.spacing8) {
-                        Text(formatMeta(meeting))
-                            .font(MuesliTheme.callout())
-                            .foregroundStyle(MuesliTheme.textSecondary)
-                        templateChip(for: appliedTemplate)
-                    }
+                    Spacer(minLength: MuesliTheme.spacing16)
+
+                    meetingHeaderControls(meeting, appliedTemplate: appliedTemplate)
                 }
 
-                Spacer(minLength: MuesliTheme.spacing16)
+                VStack(alignment: .leading, spacing: MuesliTheme.spacing16) {
+                    meetingTitleBlock(meeting, appliedTemplate: appliedTemplate)
 
-                VStack(alignment: .trailing, spacing: 10) {
-                    if showsManualNotesEditor(for: meeting) {
-                        recordingControlGroup(for: meeting)
-                    } else {
-                        documentModePicker
-
-                        headerActions(for: meeting, appliedTemplate: appliedTemplate)
-                    }
+                    meetingHeaderControls(meeting, appliedTemplate: appliedTemplate)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
 
@@ -201,6 +185,54 @@ struct MeetingDetailView: View {
         .padding(.horizontal, 40)
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func meetingTitleBlock(_ meeting: MeetingRecord, appliedTemplate: MeetingTemplateSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
+            MarqueeTitleTextField(
+                text: $editableTitle,
+                onSubmit: {
+                    controller.updateMeetingTitle(id: meeting.id, title: editableTitle)
+                },
+                onTextChange: {
+                    debounceSaveTitle(meetingID: meeting.id)
+                }
+            )
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: MuesliTheme.spacing8) {
+                    meetingMetaLabel(meeting)
+                    templateChip(for: appliedTemplate)
+                }
+
+                VStack(alignment: .leading, spacing: MuesliTheme.spacing4) {
+                    meetingMetaLabel(meeting)
+                    templateChip(for: appliedTemplate)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func meetingMetaLabel(_ meeting: MeetingRecord) -> some View {
+        Text(formatMeta(meeting))
+            .font(MuesliTheme.callout())
+            .foregroundStyle(MuesliTheme.textSecondary)
+            .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func meetingHeaderControls(_ meeting: MeetingRecord, appliedTemplate: MeetingTemplateSnapshot) -> some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            if showsManualNotesEditor(for: meeting) {
+                recordingControlGroup(for: meeting)
+            } else {
+                documentModePicker
+
+                headerActions(for: meeting, appliedTemplate: appliedTemplate)
+            }
+        }
     }
 
     @ViewBuilder
@@ -301,7 +333,7 @@ struct MeetingDetailView: View {
         }
         .pickerStyle(.segmented)
         .tint(MuesliTheme.accent)
-        .frame(width: 220)
+        .frame(width: 260)
         .disabled(isEditingNotes || isEditingTranscript)
     }
 
@@ -540,36 +572,49 @@ struct MeetingDetailView: View {
 
     @ViewBuilder
     private func contentToolbar(for meeting: MeetingRecord) -> some View {
-        HStack {
-            Spacer()
-
-            retranscribeAction(for: meeting)
-            exportMenu(for: meeting)
-
-            Button(action: {
-                controller.copyToClipboard(activeCopyText(for: meeting))
-            }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text(copyButtonLabel)
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundStyle(MuesliTheme.textPrimary)
-                .padding(.horizontal, MuesliTheme.spacing12)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                        .fill(MuesliTheme.accent.opacity(0.18))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                        .strokeBorder(MuesliTheme.accent.opacity(0.35), lineWidth: 1)
-                )
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: MuesliTheme.spacing8) {
+                Spacer(minLength: 0)
+                retranscribeAction(for: meeting)
+                exportMenu(for: meeting)
+                copyButton(for: meeting)
             }
-            .buttonStyle(.plain)
+
+            VStack(alignment: .trailing, spacing: MuesliTheme.spacing8) {
+                retranscribeAction(for: meeting)
+                HStack(spacing: MuesliTheme.spacing8) {
+                    exportMenu(for: meeting)
+                    copyButton(for: meeting)
+                }
+            }
         }
-        .frame(maxWidth: 980, alignment: .leading)
+        .frame(maxWidth: 980, alignment: .trailing)
+    }
+
+    @ViewBuilder
+    private func copyButton(for meeting: MeetingRecord) -> some View {
+        Button(action: {
+            controller.copyToClipboard(activeCopyText(for: meeting))
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(copyButtonLabel)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(MuesliTheme.textPrimary)
+            .padding(.horizontal, MuesliTheme.spacing12)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                    .fill(MuesliTheme.accent.opacity(0.18))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                    .strokeBorder(MuesliTheme.accent.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

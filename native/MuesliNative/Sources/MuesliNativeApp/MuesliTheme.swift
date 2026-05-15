@@ -4,18 +4,18 @@ import MuesliCore
 enum MuesliTheme {
     // MARK: - Colors — Backgrounds (layered)
 
-    static let backgroundDeep   = Color.adaptive(dark: 0x101114, light: 0xF4F5F7)
-    static let backgroundBase   = Color.adaptive(dark: 0x15161A, light: 0xFAFAFC)
+    static let backgroundDeep   = Color.adaptive(dark: 0x101114, light: 0xF7F8FA)
+    static let backgroundBase   = Color.adaptive(dark: 0x15161A, light: 0xF8F9FB)
     static let backgroundRaised = Color.adaptive(dark: 0x1D1F24, light: 0xFFFFFF)
-    static let backgroundHover  = Color.adaptive(dark: 0x262932, light: 0xF2F3F6)
+    static let backgroundHover  = Color.adaptive(dark: 0x262932, light: 0xF1F3F6)
 
     // MARK: - Surfaces (interactive elements)
 
-    static let surfacePrimary   = Color.adaptive(dark: 0x292C34, light: 0xF2F3F6)
-    static let surfaceSelected  = Color.adaptive(dark: 0x2A3140, light: 0xEEF3FF)
+    static let surfacePrimary   = Color.adaptive(dark: 0x292C34, light: 0xF3F5F7)
+    static let surfaceSelected  = Color.adaptive(dark: 0x2A3140, light: 0xFFF3EA)
     static let surfaceBorder    = Color.adaptiveAlpha(
         dark: .white, darkAlpha: 0.07,
-        light: .black, lightAlpha: 0.10
+        light: .black, lightAlpha: 0.08
     )
 
     // MARK: - Text hierarchy
@@ -36,7 +36,7 @@ enum MuesliTheme {
     // MARK: - Accent
 
     static let defaultAccentDarkHex = 0x6BA3F7
-    static let defaultAccentLightHex = 0x2563EB
+    static let defaultAccentLightHex = 0xF97316
     static let defaultAccent    = Color.adaptive(dark: defaultAccentDarkHex, light: defaultAccentLightHex)
     static var accentOverrideHex: String?
     static var accent: Color {
@@ -73,14 +73,18 @@ enum MuesliTheme {
     static let spacing16: CGFloat = 16
     static let spacing20: CGFloat = 20
     static let spacing24: CGFloat = 24
+    static let spacing28: CGFloat = 28
     static let spacing32: CGFloat = 32
     static let spacing40: CGFloat = 40
 
     // MARK: - Layout
 
-    static let pageMaxWidth: CGFloat = 1040
-    static let pageHorizontalPadding: CGFloat = 40
-    static let pageVerticalPadding: CGFloat = 32
+    static let dashboardMinWidth: CGFloat = 760
+    static let dashboardMinHeight: CGFloat = 560
+    static let dashboardSidebarCollapseWidth: CGFloat = 860
+    static let pageMaxWidth: CGFloat = 1080
+    static let pageHorizontalPadding: CGFloat = 42
+    static let pageVerticalPadding: CGFloat = 36
     static let sectionSpacing: CGFloat = 24
     static let cardPadding: CGFloat = 20
     static let rowMinHeight: CGFloat = 44
@@ -94,8 +98,8 @@ enum MuesliTheme {
 
     static let cornerSmall: CGFloat = 6
     static let cornerMedium: CGFloat = 8
-    static let cornerLarge: CGFloat = 10
-    static let cornerXL: CGFloat = 12
+    static let cornerLarge: CGFloat = 12
+    static let cornerXL: CGFloat = 16
 }
 
 extension View {

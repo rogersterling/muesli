@@ -2,10 +2,11 @@ import SwiftUI
 import MuesliCore
 
 struct SidebarView: View {
-    private let sidebarIconColumnWidth: CGFloat = 24
-    private let meetingsTrailingColumnWidth: CGFloat = 24
+    private let sidebarIconColumnWidth: CGFloat = 22
+    private let meetingsTrailingColumnWidth: CGFloat = 22
     private let sidebarRowHorizontalPadding: CGFloat = 14
-    private let sidebarRowOuterPadding: CGFloat = 12
+    private let sidebarRowOuterPadding: CGFloat = 24
+    private let sidebarHeaderTopPadding: CGFloat = 36
 
     private var sidebarChildLabelLeadingPadding: CGFloat {
         sidebarRowHorizontalPadding + sidebarIconColumnWidth + MuesliTheme.spacing12
@@ -21,12 +22,13 @@ struct SidebarView: View {
     @State private var showDeleteConfirmation = false
     @State private var draggingFolderID: Int64?
     @State private var dragOrderedFolders: [MeetingFolder]?
+    @State private var searchText = ""
     @FocusState private var isSearchFieldFocused: Bool
 
     private var searchTextBinding: Binding<String> {
         Binding(
-            get: { appState.searchQuery },
-            set: { controller.performSearch(query: $0) }
+            get: { searchText },
+            set: { searchText = $0 }
         )
     }
 
@@ -100,23 +102,23 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             sidebarHeader
             searchBar
 
-            sidebarItem(tab: .dictations, icon: "mic.fill", label: "Dictations")
-            meetingsSection
-            sidebarItem(tab: .dictionary, icon: "character.book.closed", label: "Dictionary")
-            sidebarItem(tab: .models, icon: "square.and.arrow.down", label: "Models")
-            sidebarItem(tab: .shortcuts, icon: "keyboard", label: "Shortcuts")
+            VStack(alignment: .leading, spacing: 4) {
+                sidebarItem(tab: .dictations, icon: "mic.fill", label: "Dictations")
+                meetingsSection
+                sidebarItem(tab: .dictionary, icon: "character.book.closed", label: "Dictionary")
+                sidebarItem(tab: .models, icon: "cube", label: "Models")
+                sidebarItem(tab: .shortcuts, icon: "keyboard", label: "Shortcuts")
+            }
+            .padding(.top, MuesliTheme.spacing12)
 
             Spacer()
 
             modelPreparationStatus
-            sidebarItem(tab: .settings, icon: "gearshape", label: "Settings")
-            sidebarItem(tab: .about, icon: "info.circle", label: "About", updateCTA: pendingUpdateCTA)
-            darkModeToggle
-                .padding(.bottom, MuesliTheme.spacing20)
+            sidebarFooter
         }
         .frame(maxHeight: .infinity)
         .background(MuesliTheme.backgroundDeep)
@@ -158,38 +160,21 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sidebarHeader: some View {
-        VStack(alignment: .leading, spacing: MuesliTheme.spacing4) {
-            HStack(spacing: MuesliTheme.spacing12) {
-                Group {
-                    if let img = AppBrandingAssets.image(at: appState.config.customLogoPath) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                    } else if appState.config.menuBarIcon == "muesli",
-                              let img = MenuBarIconRenderer.make(choice: "muesli") {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                    } else {
-                        Image(systemName: appState.config.menuBarIcon)
-                    }
-                }
-                .frame(width: 28, height: 28)
-                .foregroundStyle(MuesliTheme.accent)
-                Text(appState.config.resolvedDisplayName)
-                    .font(MuesliTheme.title2())
-                    .foregroundStyle(MuesliTheme.textPrimary)
-            }
+        VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
+            Text(appState.config.resolvedDisplayName)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(MuesliTheme.textPrimary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             if !userName.isEmpty {
                 Text("Hi, \(userName)")
                     .font(MuesliTheme.caption())
                     .foregroundStyle(MuesliTheme.textTertiary)
-                    .padding(.leading, 40)
             }
         }
-        .padding(.horizontal, MuesliTheme.spacing20)
-        .padding(.top, MuesliTheme.spacing32)
-        .padding(.bottom, MuesliTheme.spacing20)
+        .padding(.horizontal, sidebarRowOuterPadding + sidebarRowHorizontalPadding)
+        .padding(.top, sidebarHeaderTopPadding)
+        .padding(.bottom, MuesliTheme.spacing24)
     }
 
     @ViewBuilder
@@ -203,8 +188,9 @@ struct SidebarView: View {
                 .font(MuesliTheme.callout())
                 .foregroundStyle(MuesliTheme.textPrimary)
                 .focused($isSearchFieldFocused)
-            if !appState.searchQuery.isEmpty {
+            if !searchText.isEmpty {
                 Button {
+                    searchText = ""
                     controller.clearSearch()
                     isSearchFieldFocused = false
                 } label: {
@@ -224,15 +210,26 @@ struct SidebarView: View {
             }
         }
         .padding(.horizontal, MuesliTheme.spacing12)
-        .frame(height: 38)
+        .frame(height: 42)
         .background(MuesliTheme.backgroundRaised)
-        .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium))
+        .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge))
         .overlay(
-            RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium)
+            RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
                 .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
         )
         .padding(.horizontal, sidebarRowOuterPadding)
-        .padding(.bottom, MuesliTheme.spacing12)
+        .shadow(color: Color.black.opacity(0.025), radius: 8, x: 0, y: 2)
+        .onAppear {
+            searchText = appState.searchQuery
+        }
+        .onChange(of: searchText) { _, newValue in
+            controller.performSearch(query: newValue)
+        }
+        .onChange(of: appState.searchQuery) { _, newValue in
+            if newValue.isEmpty || !isSearchFieldFocused {
+                searchText = newValue
+            }
+        }
         .onChange(of: appState.focusSearchField) { _, shouldFocus in
             if shouldFocus {
                 isSearchFieldFocused = true
@@ -290,12 +287,12 @@ struct SidebarView: View {
             .padding(.horizontal, sidebarRowHorizontalPadding)
             .frame(height: MuesliTheme.sidebarRowHeight)
             .background(
-                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                    .fill(isSelected ? MuesliTheme.surfaceSelected : Color.clear)
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
+                    .fill(isSelected ? MuesliTheme.accent.opacity(0.10) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                    .strokeBorder(isSelected ? MuesliTheme.accent.opacity(0.22) : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
+                    .strokeBorder(isSelected ? MuesliTheme.accent.opacity(0.18) : Color.clear, lineWidth: 1)
             )
             .padding(.horizontal, sidebarRowOuterPadding)
 
@@ -392,16 +389,33 @@ struct SidebarView: View {
             .padding(.horizontal, sidebarRowHorizontalPadding)
             .frame(minHeight: MuesliTheme.sidebarRowHeight)
             .background(
-                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
                     .fill(MuesliTheme.backgroundRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
                     .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
             )
             .padding(.horizontal, sidebarRowOuterPadding)
             .padding(.bottom, MuesliTheme.spacing4)
         }
+    }
+
+    @ViewBuilder
+    private var sidebarFooter: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Rectangle()
+                .fill(MuesliTheme.surfaceBorder)
+                .frame(height: 1)
+                .padding(.horizontal, sidebarRowOuterPadding)
+                .padding(.bottom, MuesliTheme.spacing12)
+
+            sidebarItem(tab: .settings, icon: "gearshape", label: "Settings")
+            sidebarItem(tab: .about, icon: "info.circle", label: "About", updateCTA: pendingUpdateCTA)
+            darkModeToggle
+                .padding(.top, MuesliTheme.spacing12)
+        }
+        .padding(.bottom, MuesliTheme.spacing28)
     }
 
     @ViewBuilder
@@ -417,7 +431,6 @@ struct SidebarView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(isSelected ? MuesliTheme.accent : MuesliTheme.textSecondary)
                     .frame(width: sidebarIconColumnWidth, height: sidebarIconColumnWidth, alignment: .center)
-                    .offset(y: icon == "square.and.arrow.down" ? -1 : 0)
                 Text(label)
                     .font(MuesliTheme.headline())
                     .foregroundStyle(isSelected ? MuesliTheme.textPrimary : MuesliTheme.textSecondary)
@@ -444,12 +457,12 @@ struct SidebarView: View {
             .padding(.horizontal, sidebarRowHorizontalPadding)
             .frame(height: MuesliTheme.sidebarRowHeight)
             .background(
-                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                    .fill(isSelected ? MuesliTheme.surfaceSelected : Color.clear)
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
+                    .fill(isSelected ? MuesliTheme.accent.opacity(0.10) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                    .strokeBorder(isSelected ? MuesliTheme.accent.opacity(0.22) : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
+                    .strokeBorder(isSelected ? MuesliTheme.accent.opacity(0.18) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -459,19 +472,19 @@ struct SidebarView: View {
     @ViewBuilder
     private var darkModeToggle: some View {
         let isDark = appState.config.darkMode
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     controller.updateConfig { $0.darkMode = false }
                 }
             } label: {
                 Image(systemName: "sun.max.fill")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(!isDark ? MuesliTheme.accent : MuesliTheme.textTertiary)
-                    .frame(width: 28, height: 22)
+                    .frame(width: 42, height: 30)
                     .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(!isDark ? MuesliTheme.surfaceSelected : Color.clear)
+                        RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium)
+                            .fill(!isDark ? MuesliTheme.backgroundRaised : Color.clear)
                     )
             }
             .buttonStyle(.plain)
@@ -482,24 +495,27 @@ struct SidebarView: View {
                 }
             } label: {
                 Image(systemName: "moon.fill")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(isDark ? MuesliTheme.accent : MuesliTheme.textTertiary)
-                    .frame(width: 28, height: 22)
+                    .frame(width: 42, height: 30)
                     .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(isDark ? MuesliTheme.surfaceSelected : Color.clear)
+                        RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium)
+                            .fill(isDark ? MuesliTheme.backgroundRaised : Color.clear)
                     )
             }
             .buttonStyle(.plain)
         }
-        .padding(2)
+        .padding(3)
         .background(
-            RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                .fill(MuesliTheme.backgroundRaised)
+            RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
+                .fill(MuesliTheme.surfacePrimary)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MuesliTheme.cornerLarge)
+                .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
         )
         .padding(.horizontal, sidebarRowOuterPadding)
         .padding(.leading, sidebarRowHorizontalPadding)
-        .padding(.bottom, MuesliTheme.spacing4)
     }
 
     @ViewBuilder
@@ -541,8 +557,8 @@ struct SidebarView: View {
         .padding(.trailing, sidebarRowHorizontalPadding)
         .frame(height: MuesliTheme.sidebarChildRowHeight)
         .background(
-            RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                .fill(isSelected ? MuesliTheme.surfaceSelected.opacity(0.6) : Color.clear)
+            RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium)
+                .fill(isSelected ? MuesliTheme.backgroundRaised : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
@@ -570,8 +586,8 @@ struct SidebarView: View {
         .padding(.trailing, sidebarRowHorizontalPadding)
         .frame(height: MuesliTheme.sidebarChildRowHeight)
         .background(
-            RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                .fill(MuesliTheme.surfaceSelected.opacity(0.6))
+            RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium)
+                .fill(MuesliTheme.backgroundRaised)
         )
     }
 

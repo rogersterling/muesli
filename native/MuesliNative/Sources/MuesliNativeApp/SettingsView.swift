@@ -88,6 +88,7 @@ struct SettingsView: View {
     @State private var openRouterFreeModels: [SummaryModelPreset] = []
     @State private var isLoadingOpenRouterFreeModels = false
     @State private var openRouterFreeModelsError: String?
+    @State private var appDisplayNameDraft = ""
 
     // Uniform width for all right-side controls
     private let controlWidth: CGFloat = 240
@@ -143,6 +144,7 @@ struct SettingsView: View {
         }
         .background(MuesliTheme.backgroundBase)
         .onAppear {
+            appDisplayNameDraft = appState.config.appDisplayName
             refreshDownloadedModelOptions()
             startPermissionPolling()
             if appState.selectedMeetingSummaryBackend == .openRouter {
@@ -169,6 +171,11 @@ struct SettingsView: View {
         .onChange(of: appState.selectedMeetingSummaryBackend) { _, backend in
             if backend == .openRouter {
                 loadOpenRouterFreeModelsIfNeeded()
+            }
+        }
+        .onChange(of: appState.config.appDisplayName) { _, name in
+            if appDisplayNameDraft != name {
+                appDisplayNameDraft = name
             }
         }
         .alert(
@@ -756,9 +763,10 @@ struct SettingsView: View {
             settingsSection("Appearance") {
                 settingsRow("App name", controlWidth: 260) {
                     settingsTextField(
-                        text: appState.config.appDisplayName,
+                        text: appDisplayNameDraft,
                         placeholder: AppIdentity.bundleDisplayName
                     ) { value in
+                        appDisplayNameDraft = value
                         controller.updateConfig { $0.appDisplayName = value }
                     }
                 }
@@ -838,26 +846,25 @@ struct SettingsView: View {
                 .help(preset.name)
             }
 
-            ColorPicker(
-                "",
-                selection: Binding(
-                    get: { Color(hex: appState.config.recordingColorHex) },
-                    set: { color in
-                        if let hex = NSColor(color).toHexString() {
-                            controller.updateConfig { $0.recordingColorHex = hex }
-                        }
+            CompactColorWell(
+                color: .muesliHex(appState.config.recordingColorHex),
+                onChange: { color in
+                    if let hex = color.toHexString() {
+                        controller.updateConfig { $0.recordingColorHex = hex }
                     }
-                ),
-                supportsOpacity: false
+                }
             )
-            .labelsHidden()
-            .frame(width: 28, height: 24)
+            .frame(width: 24, height: 24)
+            .clipShape(Circle())
+            .overlay(
+                Circle().strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+            )
             .help("Choose any accent color")
         }
     }
 
     private var customLogoPicker: some View {
-        HStack(spacing: MuesliTheme.spacing8) {
+        HStack(spacing: 6) {
             logoPreview
 
             Button {
@@ -866,7 +873,7 @@ struct SettingsView: View {
                 Image(systemName: "photo")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(MuesliTheme.textSecondary)
-                    .frame(width: 28, height: 24)
+                    .frame(width: 28, height: 28)
                     .background(MuesliTheme.surfacePrimary)
                     .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
                     .overlay(
@@ -886,12 +893,13 @@ struct SettingsView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(MuesliTheme.textTertiary)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .help("Remove custom logo")
             }
         }
+        .frame(width: 260, alignment: .trailing)
     }
 
     private var logoPreview: some View {
@@ -908,8 +916,8 @@ struct SettingsView: View {
                     .font(.system(size: 13))
             }
         }
-        .frame(width: 24, height: 24)
-        .padding(2)
+        .frame(width: 20, height: 20)
+        .padding(4)
         .background(MuesliTheme.backgroundRaised)
         .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
         .overlay(
@@ -2217,25 +2225,33 @@ struct PastableSecureField: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: EditableNSSecureTextField, context: Context) {
+        context.coordinator.onChange = onChange
         if nsView.stringValue != text {
+            guard nsView.currentEditor() == nil else { return }
             nsView.stringValue = text
+            context.coordinator.lastValue = text
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onChange: onChange)
+        Coordinator(initialValue: text, onChange: onChange)
     }
 
     class Coordinator: NSObject, NSTextFieldDelegate {
-        let onChange: (String) -> Void
+        var lastValue: String
+        var onChange: (String) -> Void
 
-        init(onChange: @escaping (String) -> Void) {
+        init(initialValue: String, onChange: @escaping (String) -> Void) {
+            self.lastValue = initialValue
             self.onChange = onChange
         }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSTextField else { return }
-            onChange(field.stringValue)
+            let value = field.stringValue
+            guard value != lastValue else { return }
+            lastValue = value
+            onChange(value)
         }
     }
 }
@@ -2259,8 +2275,55 @@ struct PastableTextField: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: EditableNSTextField, context: Context) {
+        context.coordinator.onChange = onChange
         if nsView.stringValue != text {
+            guard nsView.currentEditor() == nil else { return }
             nsView.stringValue = text
+            context.coordinator.lastValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(initialValue: text, onChange: onChange)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var lastValue: String
+        var onChange: (String) -> Void
+
+        init(initialValue: String, onChange: @escaping (String) -> Void) {
+            self.lastValue = initialValue
+            self.onChange = onChange
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            let value = field.stringValue
+            guard value != lastValue else { return }
+            lastValue = value
+            onChange(value)
+        }
+    }
+}
+
+struct CompactColorWell: NSViewRepresentable {
+    let color: NSColor
+    let onChange: (NSColor) -> Void
+
+    func makeNSView(context: Context) -> CompactColorWellButton {
+        let button = CompactColorWellButton(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+        button.swatchColor = color
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.openColorPanel(_:))
+        context.coordinator.button = button
+        return button
+    }
+
+    func updateNSView(_ nsView: CompactColorWellButton, context: Context) {
+        context.coordinator.onChange = onChange
+        context.coordinator.button = nsView
+        if !nsView.swatchColor.isEqual(color) {
+            nsView.swatchColor = color
         }
     }
 
@@ -2268,17 +2331,88 @@ struct PastableTextField: NSViewRepresentable {
         Coordinator(onChange: onChange)
     }
 
-    class Coordinator: NSObject, NSTextFieldDelegate {
-        let onChange: (String) -> Void
+    class Coordinator: NSObject {
+        var onChange: (NSColor) -> Void
+        weak var button: CompactColorWellButton?
+        private var panelObserver: NSObjectProtocol?
 
-        init(onChange: @escaping (String) -> Void) {
+        init(onChange: @escaping (NSColor) -> Void) {
             self.onChange = onChange
         }
 
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            onChange(field.stringValue)
+        deinit {
+            if let panelObserver {
+                NotificationCenter.default.removeObserver(panelObserver)
+            }
         }
+
+        @objc func openColorPanel(_ sender: CompactColorWellButton) {
+            let panel = NSColorPanel.shared
+            panel.showsAlpha = false
+            panel.color = sender.swatchColor
+            observe(panel)
+            panel.makeKeyAndOrderFront(nil)
+        }
+
+        private func observe(_ panel: NSColorPanel) {
+            if let panelObserver {
+                NotificationCenter.default.removeObserver(panelObserver)
+            }
+            panelObserver = NotificationCenter.default.addObserver(
+                forName: NSColorPanel.colorDidChangeNotification,
+                object: panel,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self, let panel = notification.object as? NSColorPanel else { return }
+                button?.swatchColor = panel.color
+                onChange(panel.color)
+            }
+        }
+    }
+}
+
+final class CompactColorWellButton: NSButton {
+    var swatchColor: NSColor = .controlAccentColor {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        title = ""
+        isBordered = false
+        bezelStyle = .regularSquare
+        setButtonType(.momentaryPushIn)
+        focusRingType = .none
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        title = ""
+        isBordered = false
+        focusRingType = .none
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 24, height: 24)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+
+        let circleRect = bounds.insetBy(dx: 2, dy: 2)
+        let path = NSBezierPath(ovalIn: circleRect)
+        swatchColor.setFill()
+        path.fill()
+
+        NSColor.white.withAlphaComponent(isHighlighted ? 0.95 : 0.7).setStroke()
+        path.lineWidth = 1.5
+        path.stroke()
+
+        NSColor.separatorColor.withAlphaComponent(0.8).setStroke()
+        let border = NSBezierPath(ovalIn: circleRect.insetBy(dx: -0.5, dy: -0.5))
+        border.lineWidth = 1
+        border.stroke()
     }
 }
 
@@ -2298,6 +2432,20 @@ private extension Color {
 }
 
 private extension NSColor {
+    static func muesliHex(_ hex: String) -> NSColor {
+        var h = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        h = h.hasPrefix("#") ? String(h.dropFirst()) : h
+        guard h.count == 6, let value = UInt64(h, radix: 16) else {
+            return .controlAccentColor
+        }
+        return NSColor(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+
     func toHexString() -> String? {
         guard let rgb = usingColorSpace(.sRGB) else { return nil }
         let r = Int((rgb.redComponent   * 255).rounded())

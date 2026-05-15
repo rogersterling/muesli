@@ -4,56 +4,84 @@ import MuesliCore
 struct DashboardRootView: View {
     let appState: AppState
     let controller: MuesliController
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(appState: appState, controller: controller)
-            .navigationSplitViewColumnWidth(
-                min: MuesliTheme.sidebarMinWidth,
-                ideal: MuesliTheme.sidebarIdealWidth,
-                max: MuesliTheme.sidebarMaxWidth
-            )
-        } detail: {
-            Group {
-                if appState.isSearchActive,
-                   case .document(let id) = appState.meetingsNavigationState {
-                    MeetingDetailView(
-                        meeting: appState.selectedMeeting,
-                        controller: controller,
-                        appState: appState,
-                        onBack: {
-                            appState.meetingsNavigationState = .browser
-                            appState.selectedMeetingID = nil
-                            appState.selectedMeetingRecord = nil
-                        },
-                        backLabel: "Back to Search"
-                    )
-                    .id(id)
-                } else if appState.isSearchActive {
-                    SearchResultsView(appState: appState, controller: controller)
-                } else {
-                    switch appState.selectedTab {
-                    case .dictations:
-                        DictationsView(appState: appState, controller: controller)
-                    case .meetings:
-                        MeetingsView(appState: appState, controller: controller)
-                    case .dictionary:
-                        DictionaryView(appState: appState, controller: controller)
-                    case .models:
-                        ModelsView(appState: appState, controller: controller)
-                    case .shortcuts:
-                        ShortcutsView(appState: appState, controller: controller)
-                    case .settings:
-                        SettingsView(appState: appState, controller: controller)
-                    case .about:
-                        AboutView(appState: appState, controller: controller)
-                    }
+        GeometryReader { proxy in
+            splitView
+                .onAppear {
+                    updateSidebarVisibility(for: proxy.size.width)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(MuesliTheme.backgroundBase)
+                .onChange(of: proxy.size.width) { _, width in
+                    updateSidebarVisibility(for: width)
+                }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minHeight: MuesliTheme.dashboardMinHeight)
+        .background(MuesliTheme.backgroundBase)
         .preferredColorScheme(appState.config.darkMode ? .dark : .light)
+    }
+
+    private var splitView: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView(appState: appState, controller: controller)
+                .navigationSplitViewColumnWidth(
+                    min: MuesliTheme.sidebarMinWidth,
+                    ideal: MuesliTheme.sidebarIdealWidth,
+                    max: MuesliTheme.sidebarMaxWidth
+                )
+        } detail: {
+            detailContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(MuesliTheme.backgroundBase)
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private func updateSidebarVisibility(for width: CGFloat) {
+        if width < MuesliTheme.dashboardSidebarCollapseWidth {
+            if columnVisibility != .detailOnly {
+                columnVisibility = .detailOnly
+            }
+        } else if columnVisibility == .detailOnly {
+            columnVisibility = .all
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if appState.isSearchActive,
+           case .document(let id) = appState.meetingsNavigationState {
+            MeetingDetailView(
+                meeting: appState.selectedMeeting,
+                controller: controller,
+                appState: appState,
+                onBack: {
+                    appState.meetingsNavigationState = .browser
+                    appState.selectedMeetingID = nil
+                    appState.selectedMeetingRecord = nil
+                },
+                backLabel: "Back to Search"
+            )
+            .id(id)
+        } else if appState.isSearchActive {
+            SearchResultsView(appState: appState, controller: controller)
+        } else {
+            switch appState.selectedTab {
+            case .dictations:
+                DictationsView(appState: appState, controller: controller)
+            case .meetings:
+                MeetingsView(appState: appState, controller: controller)
+            case .dictionary:
+                DictionaryView(appState: appState, controller: controller)
+            case .models:
+                ModelsView(appState: appState, controller: controller)
+            case .shortcuts:
+                ShortcutsView(appState: appState, controller: controller)
+            case .settings:
+                SettingsView(appState: appState, controller: controller)
+            case .about:
+                AboutView(appState: appState, controller: controller)
+            }
+        }
     }
 }
