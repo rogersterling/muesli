@@ -34,6 +34,7 @@ final class MeetingNotificationController {
         meetingURL: URL? = nil,
         preferredScreen: NSScreen? = nil,
         platform explicitPlatform: MeetingPlatform? = nil,
+        accentHex: String? = nil,
         dismissAfter: TimeInterval? = nil,
         onStartRecording: @escaping () -> Void,
         onJoinAndRecord: (() -> Void)? = nil,
@@ -56,6 +57,7 @@ final class MeetingNotificationController {
 
         let hasJoinButton = meetingURL != nil && onJoinAndRecord != nil
         let platform = explicitPlatform ?? meetingURL.flatMap { MeetingPlatform.detect(from: $0) }
+        let accentColor = Self.accentColor(hex: accentHex)
 
         let cardWidth: CGFloat = 344
         let cardHeight: CGFloat = 60
@@ -102,13 +104,13 @@ final class MeetingNotificationController {
         cardView.layer?.masksToBounds = true
         cardView.layer?.backgroundColor = NSColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 0.97).cgColor
         cardView.layer?.borderWidth = 1
-        cardView.layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        cardView.layer?.borderColor = accentColor.withAlphaComponent(0.22).cgColor
         contentView.addSubview(cardView)
 
         // Countdown progress bar at bottom
         let progressBar = CALayer()
         progressBar.frame = CGRect(x: 0, y: 0, width: cardWidth, height: 3)
-        progressBar.backgroundColor = NSColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 0.8).cgColor
+        progressBar.backgroundColor = accentColor.withAlphaComponent(0.88).cgColor
         cardView.layer?.addSublayer(progressBar)
         self.progressLayer = progressBar
 
@@ -126,7 +128,7 @@ final class MeetingNotificationController {
         dismissButton.wantsLayer = true
         dismissButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.70).cgColor
         dismissButton.layer?.borderWidth = 1
-        dismissButton.layer?.borderColor = NSColor.white.withAlphaComponent(0.55).cgColor
+        dismissButton.layer?.borderColor = accentColor.withAlphaComponent(0.70).cgColor
         dismissButton.layer?.cornerRadius = closeButtonSize / 2
         dismissButton.alignment = .center
         dismissButton.focusRingType = .none
@@ -206,7 +208,7 @@ final class MeetingNotificationController {
             startButton.font = .systemFont(ofSize: 12, weight: .medium)
             startButton.frame = NSRect(x: cardWidth - 122, y: 15, width: 110, height: 30)
             startButton.wantsLayer = true
-            startButton.layer?.backgroundColor = NSColor(red: 0.2, green: 0.5, blue: 1.0, alpha: 1.0).cgColor
+            startButton.layer?.backgroundColor = accentColor.cgColor
             startButton.layer?.cornerRadius = 6
             startButton.isBordered = false
             startButton.contentTintColor = .white
@@ -237,6 +239,27 @@ final class MeetingNotificationController {
 
     static func firesAutoDismissCallbackAfterFade(wasDismissPaused: Bool) -> Bool {
         !wasDismissPaused
+    }
+
+    static func accentColor(hex: String?) -> NSColor {
+        let fallback = NSColor(red: 249.0 / 255.0, green: 115.0 / 255.0, blue: 22.0 / 255.0, alpha: 1.0)
+        guard let hex else {
+            return fallback
+        }
+        let sanitized = hex
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard sanitized.count == 6,
+              sanitized.lowercased() != "1e1e2e",
+              let value = UInt64(sanitized, radix: 16) else {
+            return fallback
+        }
+        return NSColor(
+            red: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1.0
+        )
     }
 
     func close() {

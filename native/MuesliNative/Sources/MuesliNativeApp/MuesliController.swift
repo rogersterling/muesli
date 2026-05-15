@@ -1204,14 +1204,15 @@ final class MuesliController: NSObject {
     }
 
     private var shouldRunMeetingFeatureMonitors: Bool {
-        config.showMeetingDetectionNotification
-            || config.showScheduledMeetingNotifications
-            || config.autoRecordMeetings
+        MeetingFeatureMonitorPolicy.shouldStartFeatureMonitors(config: config)
     }
 
     private func syncMeetingDetectionMonitor() {
         let shouldRun = meetingFeatureMonitorsAllowed
-            && (config.showMeetingDetectionNotification || activeMeetingAutoStop.isArmed)
+            && MeetingFeatureMonitorPolicy.shouldRunDetectionMonitor(
+                config: config,
+                hasActiveAutoStop: activeMeetingAutoStop.isArmed
+            )
         if shouldRun && !meetingDetectionMonitorStarted {
             meetingMonitor.start()
             meetingDetectionMonitorStarted = true
@@ -1297,6 +1298,7 @@ final class MuesliController: NSObject {
             title: "Meeting starting now",
             subtitle: title,
             meetingURL: meetingURL,
+            accentHex: config.recordingColorHex,
             dismissAfter: 30,
             onStartRecording: { [weak self] in
                 guard let self else { return }
@@ -3439,6 +3441,7 @@ final class MuesliController: NSObject {
                     title: "Transcription complete",
                     subtitle: meetingTitle,
                     actionLabel: "View Notes",
+                    accentHex: self.config.recordingColorHex,
                     onStartRecording: { [weak self] in
                         guard let self else { return }
                         if let savedMeetingID {
@@ -3856,6 +3859,7 @@ final class MuesliController: NSObject {
             subtitle: title,
             preferredScreen: preferredScreen,
             platform: MeetingPlatform(candidate.platform),
+            accentHex: config.recordingColorHex,
             onStartRecording: { [weak self] in
                 guard let self else { return }
                 if self.startForegroundMeetingRecording(
@@ -4764,18 +4768,9 @@ final class MuesliController: NSObject {
         let meetingURL = event.meetingURL ?? calendarEvent?.meetingURL
         let autoStopSource = meetingURL.flatMap { MeetingAutoStopSource(meetingURL: $0) }
 
-        if config.autoRecordMeetings, !isMeetingRecording() {
-            startMeetingRecording(
-                title: event.title,
-                calendarEventID: event.id,
-                openDocument: true,
-                endDate: calendarEndDate,
-                autoStopSource: autoStopSource
-            )
-            return
-        }
-
-        // Show notification panel for calendar events (if not auto-recording)
+        // Scheduled calendar events are click-to-start only. The notification can
+        // appear before the meeting starts, but recording begins only from an
+        // explicit user action in the notification or Coming Up list.
         guard config.showScheduledMeetingNotifications,
               !isMeetingRecording(),
               !isStartingMeetingRecording else {
@@ -4798,6 +4793,7 @@ final class MuesliController: NSObject {
             title: "Upcoming meeting",
             subtitle: "\(title) · \(timeLabel)",
             meetingURL: meetingURL,
+            accentHex: config.recordingColorHex,
             onStartRecording: { [weak self] in
                 guard let self else { return }
                 self.isShowingCalendarNotification = false
@@ -4854,6 +4850,7 @@ final class MuesliController: NSObject {
             title: "Meeting ended",
             subtitle: "\(title) · scheduled time is over",
             actionLabel: "Stop Recording",
+            accentHex: config.recordingColorHex,
             dismissAfter: 45,
             onStartRecording: { [weak self] in
                 self?.stopMeetingRecording()

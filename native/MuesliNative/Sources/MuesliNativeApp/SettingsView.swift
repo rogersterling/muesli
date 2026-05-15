@@ -645,12 +645,6 @@ struct SettingsView: View {
             }
 
             settingsSection("Recording") {
-                settingsRow("Auto-record calendar meetings") {
-                    settingsSwitch(isOn: appState.config.autoRecordMeetings) { newValue in
-                        controller.updateConfig { $0.autoRecordMeetings = newValue }
-                    }
-                }
-                Divider().background(MuesliTheme.surfaceBorder)
                 settingsRow("Save meeting recording") {
                     settingsMenu(
                         selection: recordingSaveLabel(for: appState.config.meetingRecordingSavePolicy),

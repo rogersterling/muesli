@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 @testable import MuesliNativeApp
 
@@ -32,5 +33,30 @@ struct MeetingNotificationControllerTests {
     func autoDismissCallbackSkippedWhenPausedDuringFadeOut() {
         #expect(MeetingNotificationController.firesAutoDismissCallbackAfterFade(wasDismissPaused: false))
         #expect(!MeetingNotificationController.firesAutoDismissCallbackAfterFade(wasDismissPaused: true))
+    }
+
+    @Test("notification accent resolves custom hex color")
+    @MainActor
+    func notificationAccentResolvesCustomHexColor() throws {
+        let components = try rgbComponents(MeetingNotificationController.accentColor(hex: "fb6100"))
+
+        #expect(abs(components.red - 251.0 / 255.0) < 0.001)
+        #expect(abs(components.green - 97.0 / 255.0) < 0.001)
+        #expect(abs(components.blue - 0.0) < 0.001)
+    }
+
+    @Test("notification accent falls back for default recording color")
+    @MainActor
+    func notificationAccentFallsBackForDefaultRecordingColor() throws {
+        let components = try rgbComponents(MeetingNotificationController.accentColor(hex: "1e1e2e"))
+
+        #expect(abs(components.red - 249.0 / 255.0) < 0.001)
+        #expect(abs(components.green - 115.0 / 255.0) < 0.001)
+        #expect(abs(components.blue - 22.0 / 255.0) < 0.001)
+    }
+
+    private func rgbComponents(_ color: NSColor) throws -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        let converted = try #require(color.usingColorSpace(.sRGB))
+        return (converted.redComponent, converted.greenComponent, converted.blueComponent)
     }
 }
