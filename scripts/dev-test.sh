@@ -6,7 +6,7 @@ set -euo pipefail
 # - Separate bundle ID (com.muesli.dev) — won't interfere with production Muesli
 # - Separate data directory (~/Library/Application Support/MuesliDev/)
 # - Preserves existing dev config and database by default
-# - Signed with Developer ID by default (Accessibility permission persists across rebuilds)
+# - Signed with a stable local dev identity when available (TCC permissions persist across rebuilds)
 # - External contributors can set MUESLI_SKIP_SIGN=1 to build without the
 #   maintainer signing certificate
 # - Installs to /Applications/MuesliDev.app
@@ -19,6 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEV_SUPPORT_DIR="$HOME/Library/Application Support/MuesliDev"
 DEV_APP="/Applications/MuesliDev.app"
 ONBOARDING_PROGRESS_FILE="$DEV_SUPPORT_DIR/onboarding-progress.json"
+LOCAL_DEV_SIGN_IDENTITY="${MUESLI_DEV_SIGN_IDENTITY:-Muesli Local Dev Signing}"
 
 # Parse args
 RESET=0
@@ -60,14 +61,27 @@ print('  Onboarding reset (data preserved)')
 "
 fi
 
-# Build with isolated identity
+# Build with isolated identity. Prefer the stable local dev identity on Sam's
+# machine so macOS permissions are tied to a durable signing requirement instead
+# of a changing ad-hoc cdhash.
 echo "Building MuesliDev (debug, signed)..."
-MUESLI_APP_NAME=MuesliDev \
-MUESLI_BUNDLE_ID=com.muesli.dev \
-MUESLI_SUPPORT_DIR_NAME=MuesliDev \
-MUESLI_DISPLAY_NAME=MuesliDev \
-MUESLI_SPARKLE_FEED_URL="" \
-"$ROOT/scripts/build_native_app.sh" debug
+BUILD_ENV=(
+  MUESLI_APP_NAME=MuesliDev
+  MUESLI_BUNDLE_ID=com.muesli.dev
+  MUESLI_SUPPORT_DIR_NAME=MuesliDev
+  MUESLI_DISPLAY_NAME=MuesliDev
+  MUESLI_SPARKLE_FEED_URL=
+)
+
+if [[ "${MUESLI_SKIP_SIGN:-0}" != "1" ]] && security find-identity -v -p codesigning | grep -Fq "$LOCAL_DEV_SIGN_IDENTITY"; then
+  echo "Using local dev signing identity: $LOCAL_DEV_SIGN_IDENTITY"
+  BUILD_ENV+=(
+    MUESLI_SIGN_IDENTITY="$LOCAL_DEV_SIGN_IDENTITY"
+    MUESLI_DISABLE_LIBRARY_VALIDATION=1
+  )
+fi
+
+env "${BUILD_ENV[@]}" "$ROOT/scripts/build_native_app.sh" debug
 
 echo ""
 echo "Launching MuesliDev..."

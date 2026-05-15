@@ -25,6 +25,7 @@ APP_DIR="$INSTALL_DIR/$APP_BUNDLE_NAME"
 DEFAULT_SIGN_IDENTITY="Developer ID Application: Pranav Hari Guruvayurappan (58W55QJ567)"
 SIGN_IDENTITY="${MUESLI_SIGN_IDENTITY:-$DEFAULT_SIGN_IDENTITY}"
 SKIP_SIGN="${MUESLI_SKIP_SIGN:-0}"
+DISABLE_LIBRARY_VALIDATION="${MUESLI_DISABLE_LIBRARY_VALIDATION:-0}"
 
 SWIFT_BUILD_ARGS=(--package-path "$PACKAGE_DIR" -c "$BUILD_CONFIG")
 if [[ -n "${MUESLI_SWIFTPM_SCRATCH_PATH:-}" ]]; then
@@ -186,12 +187,25 @@ if [[ "$SKIP_SIGN" != "1" ]]; then
     --sign "$SIGN_IDENTITY" \
     "$APP_DIR/Contents/MacOS/muesli-cli"
 
-  # Sign the app bundle with hardened runtime, secure timestamp, and entitlements
+  # Sign the app bundle with hardened runtime, secure timestamp, and entitlements.
+  # Local dev self-signed identities need library validation disabled so bundled
+  # Sparkle can load under hardened runtime without switching to ad-hoc signing.
   ENTITLEMENTS="$ROOT/scripts/Muesli.entitlements"
+  ENTITLEMENTS_TO_SIGN="$ENTITLEMENTS"
+  TEMP_ENTITLEMENTS=""
+  if [[ "$DISABLE_LIBRARY_VALIDATION" == "1" ]]; then
+    TEMP_ENTITLEMENTS="$(mktemp)"
+    cp "$ENTITLEMENTS" "$TEMP_ENTITLEMENTS"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$TEMP_ENTITLEMENTS" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c "Set :com.apple.security.cs.disable-library-validation true" "$TEMP_ENTITLEMENTS"
+    ENTITLEMENTS_TO_SIGN="$TEMP_ENTITLEMENTS"
+  fi
+
   codesign --force --options runtime --timestamp \
-    --entitlements "$ENTITLEMENTS" \
+    --entitlements "$ENTITLEMENTS_TO_SIGN" \
     --sign "$SIGN_IDENTITY" \
     "$APP_DIR"
+  [[ -z "$TEMP_ENTITLEMENTS" ]] || rm -f "$TEMP_ENTITLEMENTS"
 
   # Deep-verify entire bundle — fail fast if any component has an invalid signature
   echo "Verifying deep signature..."
