@@ -99,6 +99,9 @@ final class GoogleCalendarClient {
     /// Last fetched calendar list. Refreshed each time `fetchUpcomingEvents` runs
     /// so calendars added in the Google web UI get picked up automatically.
     private var cachedCalendarList: [GoogleCalendarSummary] = []
+    /// False when the latest fetch returned cached or partial Google Calendar
+    /// results because a list or event request failed.
+    private(set) var lastUpcomingEventsFetchWasComplete = true
 
     /// Fetch upcoming events from every Google calendar the user can read,
     /// minus any in `disabledCalendarIDs`. Refreshes the calendar list on each
@@ -108,6 +111,9 @@ final class GoogleCalendarClient {
         daysAhead: Int = UpcomingMeetingsWindow.defaultDayCount,
         disabledCalendarIDs: Set<String> = []
     ) async throws -> [UnifiedCalendarEvent] {
+        var completedAllFetches = true
+        defer { lastUpcomingEventsFetchWasComplete = completedAllFetches }
+
         let resolvedDayCount = UpcomingMeetingsWindow.resolve(dayCount: daysAhead).dayCount
         let now = Date()
         resetEventSyncIfNeededForWindow(daysAhead: resolvedDayCount, now: now)
@@ -130,6 +136,7 @@ final class GoogleCalendarClient {
                 )]
             }
             fputs("[google-cal] calendarList fetch failed, using cached list: \(error)\n", stderr)
+            completedAllFetches = false
         }
 
         let enabled = cachedCalendarList.filter { !disabledCalendarIDs.contains($0.id) }
@@ -149,6 +156,7 @@ final class GoogleCalendarClient {
                 throw authError
             } catch {
                 fputs("[google-cal] events fetch failed for \(calendar.id), keeping cached events: \(error)\n", stderr)
+                completedAllFetches = false
             }
         }
 
@@ -334,6 +342,7 @@ final class GoogleCalendarClient {
         cachedEventWindowDayCount = nil
         cachedEventWindowStartOfDay = nil
         cachedCalendarList.removeAll()
+        lastUpcomingEventsFetchWasComplete = true
     }
 
     @discardableResult
