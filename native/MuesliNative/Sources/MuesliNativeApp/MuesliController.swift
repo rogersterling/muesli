@@ -665,7 +665,7 @@ final class MuesliController: NSObject {
     func performSearch(query: String) {
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        appState.searchQuery = query
+        appState.searchQuery = trimmed
         guard !trimmed.isEmpty else {
             appState.searchResultDictations = []
             appState.searchResultMeetings = []
