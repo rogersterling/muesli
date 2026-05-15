@@ -74,6 +74,7 @@ struct MeetingAutoStopPolicyTests {
 
         #expect(source.candidateID == "googleMeet:meet.google.com/aaa-bbbb-ccc")
         #expect(source.normalizedURL == "meet.google.com/aaa-bbbb-ccc")
+        #expect(source.hasObservedCandidate == false)
     }
 
     @Test("refines URL-only source with observed browser source")
@@ -85,6 +86,14 @@ struct MeetingAutoStopPolicyTests {
 
         #expect(refined.sourceBundleID == "com.google.Chrome")
         #expect(refined.suppressionID == "browser:com.google.Chrome:session:1800000000")
+        #expect(refined.hasObservedCandidate)
+    }
+
+    @Test("candidate source starts as observed")
+    func candidateSourceStartsObserved() {
+        let source = MeetingAutoStopSource(candidate: googleMeetCandidate())
+
+        #expect(source.hasObservedCandidate)
     }
 
     private func googleMeetCandidate() -> MeetingCandidate {

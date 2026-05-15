@@ -5,17 +5,20 @@ struct MeetingAutoStopSource: Equatable {
     let suppressionID: String?
     let normalizedURL: String?
     let sourceBundleID: String?
+    let hasObservedCandidate: Bool
 
     private init(
         candidateID: String?,
         suppressionID: String?,
         normalizedURL: String?,
-        sourceBundleID: String?
+        sourceBundleID: String?,
+        hasObservedCandidate: Bool
     ) {
         self.candidateID = candidateID
         self.suppressionID = suppressionID
         self.normalizedURL = normalizedURL
         self.sourceBundleID = sourceBundleID
+        self.hasObservedCandidate = hasObservedCandidate
     }
 
     init(candidate: MeetingCandidate) {
@@ -23,6 +26,7 @@ struct MeetingAutoStopSource: Equatable {
         self.suppressionID = candidate.suppressionID
         self.normalizedURL = candidate.url
         self.sourceBundleID = candidate.sourceBundleID
+        self.hasObservedCandidate = true
     }
 
     init?(meetingURL: URL) {
@@ -33,6 +37,7 @@ struct MeetingAutoStopSource: Equatable {
         self.suppressionID = normalized.id
         self.normalizedURL = normalized.url
         self.sourceBundleID = nil
+        self.hasObservedCandidate = false
     }
 
     func refined(with candidate: MeetingCandidate) -> MeetingAutoStopSource {
@@ -40,7 +45,8 @@ struct MeetingAutoStopSource: Equatable {
             candidateID: candidateID ?? candidate.id,
             suppressionID: candidate.suppressionID,
             normalizedURL: normalizedURL ?? candidate.url,
-            sourceBundleID: sourceBundleID ?? candidate.sourceBundleID
+            sourceBundleID: sourceBundleID ?? candidate.sourceBundleID,
+            hasObservedCandidate: true
         )
     }
 }

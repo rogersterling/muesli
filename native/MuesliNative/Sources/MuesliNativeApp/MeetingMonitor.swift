@@ -585,16 +585,16 @@ private actor MeetingDetectionService {
         let resolverStart = Date()
         let resolvedActivityCandidate = resolver.resolve(snapshot)
         let resolverDuration = Date().timeIntervalSince(resolverStart)
-        let unmutedActivityCandidate = isMuted(
-            resolvedActivityCandidate,
-            mutedBundleIDs: context.mutedBundleIDs
-        ) ? nil : resolvedActivityCandidate
         let activityCandidate = await mediaSessionTracker.stabilize(
-            candidate: unmutedActivityCandidate,
+            candidate: resolvedActivityCandidate,
             snapshot: snapshot
         )
         emitActivityUpdate(activityCandidate)
-        let candidate = isGloballySuppressed(now: now) ? nil : activityCandidate
+        let unmutedActivityCandidate = isMuted(
+            activityCandidate,
+            mutedBundleIDs: context.mutedBundleIDs
+        ) ? nil : activityCandidate
+        let candidate = isGloballySuppressed(now: now) ? nil : unmutedActivityCandidate
         logCandidateIfChanged(candidate)
         updateRefreshState(
             trigger: trigger,

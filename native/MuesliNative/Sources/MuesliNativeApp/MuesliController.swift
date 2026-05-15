@@ -1212,7 +1212,7 @@ final class MuesliController: NSObject {
 
     private func syncMeetingDetectionMonitor() {
         let shouldRun = meetingFeatureMonitorsAllowed
-            && config.showMeetingDetectionNotification
+            && (config.showMeetingDetectionNotification || activeMeetingAutoStopSource != nil)
         if shouldRun && !meetingDetectionMonitorStarted {
             meetingMonitor.start()
             meetingDetectionMonitorStarted = true
@@ -3784,7 +3784,8 @@ final class MuesliController: NSObject {
 
     private func armMeetingAutoStop(source: MeetingAutoStopSource?) {
         activeMeetingAutoStopSource = source
-        activeMeetingAutoStopLastSeenAt = source == nil ? nil : Date()
+        activeMeetingAutoStopLastSeenAt = source?.hasObservedCandidate == true ? Date() : nil
+        syncMeetingDetectionMonitor()
     }
 
     private func recentMeetingAutoStopSource() -> MeetingAutoStopSource? {
@@ -3801,6 +3802,7 @@ final class MuesliController: NSObject {
         activeMeetingAutoStopLastSeenAt = nil
         latestMeetingActivityCandidate = nil
         latestMeetingActivityCandidateObservedAt = nil
+        syncMeetingDetectionMonitor()
     }
 
     private func handleMeetingActivityCandidate(_ candidate: MeetingCandidate?) {
