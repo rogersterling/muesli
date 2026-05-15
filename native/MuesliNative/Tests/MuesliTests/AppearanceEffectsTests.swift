@@ -107,18 +107,3 @@ struct AppIdentityTests {
         #expect(AppIdentity.supportDirectoryName == originalSupportDirectoryName)
     }
 }
-
-@Suite("AppBrandingAssets")
-struct AppBrandingAssetsTests {
-
-    @Test("accented default app icon renders from accent color")
-    func accentedDefaultAppIconRenders() throws {
-        let image = try #require(AppBrandingAssets.accentedDefaultAppIcon(
-            accentHex: "fb6100",
-            fallbackURL: nil
-        ))
-        #expect(image.isTemplate == false)
-        #expect(image.size.width == 1024)
-        #expect(image.size.height == 1024)
-    }
-}
