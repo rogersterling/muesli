@@ -23,7 +23,7 @@ enum MeetingListItemMetadata {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
-        guard let date = StoredTimestampFormatting.parse(raw, timeZone: calendar.timeZone) else {
+        guard let date = parseStoredTimestamp(raw, timeZone: calendar.timeZone) else {
             return fallbackDate(raw)
         }
 
@@ -102,14 +102,21 @@ enum MeetingListItemMetadata {
     }
 
     private static func participant(from rawLine: String) -> MeetingListParticipant? {
+        let hasListMarker = rawLine.range(
+            of: #"^\s*(?:[-+*]|\d+[.)]|\[[ xX]\])\s+"#,
+            options: .regularExpression
+        ) != nil
+        let email = firstEmail(in: rawLine)
+        guard hasListMarker || email != nil else { return nil }
+
         let line = rawLine
             .replacingOccurrences(of: #"^\s*(?:[-+*]|\d+[.)])\s+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*\[[ xX]\]\s+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !line.isEmpty else { return nil }
+        guard !isParticipantPlaceholder(line) else { return nil }
 
-        let email = firstEmail(in: line)
         var name = line
         if let email {
             name = name.replacingOccurrences(of: email, with: "")
@@ -120,6 +127,24 @@ enum MeetingListItemMetadata {
 
         if name.isEmpty, email == nil { return nil }
         return MeetingListParticipant(name: name.isEmpty ? nil : name, email: email)
+    }
+
+    private static func isParticipantPlaceholder(_ line: String) -> Bool {
+        let normalized = line
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9 ]+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return [
+            "none",
+            "na",
+            "no attendees",
+            "no attendees captured",
+            "no participants",
+            "no participants captured",
+            "no invitees",
+            "no invitees captured"
+        ].contains(normalized)
     }
 
     private static func firstEmail(in line: String) -> String? {
@@ -157,6 +182,26 @@ enum MeetingListItemMetadata {
         return clean.count > 16 ? String(clean.prefix(16)) : clean
     }
 
+    private static func parseStoredTimestamp(_ raw: String, timeZone: TimeZone) -> Date? {
+        isoParsers.lazy.compactMap { $0.date(from: raw) }.first
+            ?? localParsers(timeZone: timeZone).lazy.compactMap { $0.date(from: raw) }.first
+    }
+
+    private static let isoParsers: [ISO8601DateFormatter] = {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let wholeSeconds = ISO8601DateFormatter()
+        wholeSeconds.formatOptions = [.withInternetDateTime]
+        return [fractional, wholeSeconds]
+    }()
+
+    private static func localParsers(timeZone: TimeZone) -> [DateFormatter] {
+        [
+            formatter(calendar: .current, dateFormat: "yyyy-MM-dd'T'HH:mm:ss.SSSSSS", timeZone: timeZone),
+            formatter(calendar: .current, dateFormat: "yyyy-MM-dd'T'HH:mm:ss", timeZone: timeZone),
+        ]
+    }
+
     private static func timeFormatter(calendar: Calendar) -> DateFormatter {
         formatter(calendar: calendar, dateFormat: "h:mm a")
     }
@@ -170,10 +215,14 @@ enum MeetingListItemMetadata {
     }
 
     private static func formatter(calendar: Calendar, dateFormat: String) -> DateFormatter {
+        formatter(calendar: calendar, dateFormat: dateFormat, timeZone: calendar.timeZone)
+    }
+
+    private static func formatter(calendar: Calendar, dateFormat: String, timeZone: TimeZone) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
+        formatter.timeZone = timeZone
         formatter.dateFormat = dateFormat
         return formatter
     }
